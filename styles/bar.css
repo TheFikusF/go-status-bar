@@ -1,0 +1,675 @@
+* {
+  font-family: "0xProto NL", "Symbols Nerd Font Mono", monospace;
+}
+
+window#waybar {
+  background-color: rgba(0, 0, 0, 0);
+  color: #ffffff;
+}
+
+button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: inset 0 -3px transparent;
+}
+
+button:hover {
+  background: inherit;
+  box-shadow: 0 3px #ffffff;
+  opacity: 0.8;
+}
+
+.module,
+#workspaces button,
+#custom-music,
+#clock-date,
+#clock-time,
+#custom-notification,
+#mpd,
+#custom-wallpaper,
+#custom-weather,
+#pulseaudio,
+#pipewire,
+#network,
+#power-profiles-daemon,
+#cpu,
+#memory,
+#temperature,
+#keyboard-state,
+#language,
+#battery,
+#battery-bat2,
+#custom-power {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  color: #ffffff;
+  transition:
+    min-width 180ms ease,
+    padding 180ms ease,
+    margin 180ms ease,
+    border-radius 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    font-size 180ms ease,
+    opacity 180ms ease;
+}
+
+.modules-right .module {
+  border: 3px solid white;
+  border-radius: 24px;
+  background-color: rgba(0, 0, 0, 0.5);
+  margin-right: 4px;
+
+  font-size: 13px;
+}
+
+#custom-wallpaper {
+  border: 3px solid white;
+  border-radius: 24px;
+  background: #3d9cff;
+  color: #ffffff;
+  margin-right: 4px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+#custom-wallpaper:hover {
+  background: #2a75eb;
+  opacity: 1;
+}
+
+#workspaces,
+#workspaces * {
+  margin-top: 0;
+  margin-bottom: 0;
+  border: none;
+}
+
+#workspaces button {
+  margin-left: 6px;
+  border: 3px solid white;
+  border-radius: 24px;
+  padding: 0 6px;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+#workspaces button.active {
+  background-color: #64727d;
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+#custom-music {
+  background-color: transparent;
+  padding: 0;
+  align-items: center;
+
+  margin-left: 6px;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+#custom-music-cover,
+#custom-music-text {
+  border: 3px solid white;
+  background-color: rgba(0, 0, 0, 0.5);
+  margin-left: 0;
+  margin-right: 0;
+}
+
+#custom-music-cover {
+  border-radius: 6px;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+#custom-music-text {
+  border-radius: 0 24px 24px 0;
+  margin-top: 4px;
+  margin-bottom: 4px;
+
+  border-left: 0;
+  padding: 0 10px;
+}
+
+#custom-music-text label {
+  min-width: 0;
+}
+
+@keyframes music-gradient {
+  0% {
+    background: linear-gradient(90deg, #e67e22, #f1c40f, #f1c40f, #e67e22, #e74c3c);
+    background-position: 0% 0%;
+  }
+  20% {
+    background: linear-gradient(90deg, #e74c3c, #e67e22, #f1c40f, #f1c40f, #e67e22);
+  }
+  40% {
+    background: linear-gradient(90deg, #e67e22, #e74c3c, #e67e22, #f1c40f, #f1c40f);
+  }
+  60% {
+    background: linear-gradient(90deg, #f1c40f, #e67e22, #e74c3c, #e67e22, #f1c40f);
+  }
+  80% {
+    background: linear-gradient(90deg, #f1c40f, #f1c40f, #e67e22, #e74c3c, #e67e22);
+  }
+  100% {
+    background: linear-gradient(90deg, #e67e22, #f1c40f, #f1c40f, #e67e22, #e74c3c);
+    background-position: 200% 0%;
+  }
+}
+
+#custom-music-cover.playing,
+#custom-music-text.playing {
+  animation: music-gradient 3s linear infinite;
+  background-size: 200% 200%;
+}
+
+#music-menu {
+  border: 3px solid white;
+  border-radius: 14px;
+  overflow: hidden;
+  min-width: 320px;
+  min-height: 128px;
+  max-width: 320px;
+  max-height: 128px;
+  width: 320px;
+  height: 128px;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+#music-menu-bg {
+  /* opacity: 0.45; */
+  border-radius: 14px;
+  min-width: 32px;
+  min-height: 128px;
+  width: 320px;
+  height: 128px;
+}
+
+#music-menu-foreground {
+  border-radius: 14px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  /* background: #000000AA; */
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.8) 100%);
+}
+
+#music-menu-content {
+  padding: 12px 12px 0 12px;
+}
+
+#music-menu-header {
+  align-items: start;
+}
+
+#music-menu-texts {
+  min-width: 0;
+}
+
+#music-menu-title {
+  font-size: 20px;
+  font-weight: 900;
+  min-width: 0;
+}
+
+#music-menu-artist {
+  opacity: 0.666;
+  margin-top: 1px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+#music-menu-slider {
+  margin-top: 4px;
+  margin-bottom: 2px;
+  min-height: 18px;
+}
+
+#music-menu-slider trough {
+  min-height: 8px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: rgba(12, 12, 12, 0.46);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+#music-menu-slider highlight {
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: linear-gradient(180deg,#f0c650 -50%, #df4545 300%);
+  box-shadow: 0 0 10px rgba(240, 198, 80, 0.28);
+}
+
+#music-menu-slider slider {
+  min-width: 14px;
+  min-height: 14px;
+  margin: -4px 0;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+
+#music-menu-slider slider:hover {
+  opacity: 0.8;
+}
+
+#music-menu-slider slider:active {
+  opacity: 0.666;
+}
+
+#music-menu-progress-row {
+  align-items: center;
+}
+
+#music-menu-position,
+#music-menu-duration {
+  margin-top: 4px;
+  min-width: 36px;
+  font-size: 14px;
+  opacity: 0.82;
+}
+
+#music-menu-position {
+  margin-right: 2px;
+}
+
+#music-menu-duration {
+  margin-left: 2px;
+}
+
+#music-menu-volume-row {
+  margin-top: 6px;
+}
+
+#music-menu-volume {
+  align-items: center;
+}
+
+#music-menu-volume-slider {
+  min-width: 82px;
+  max-width: 82px;
+  min-height: 14px;
+}
+
+#music-menu-volume-slider trough {
+  min-height: 6px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: rgba(16, 16, 16, 0.42);
+}
+
+#music-menu-volume-slider highlight {
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: linear-gradient(180deg,#f0c650 -50%, #df4545 300%);
+  box-shadow: 0 0 10px rgba(240, 198, 80, 0.28);
+}
+
+#music-menu-volume-slider slider {
+  min-width: 10px;
+  min-height: 10px;
+  margin: -3px 0;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: #ffffff;
+}
+
+#music-menu-volume-button {
+  min-width: 28px;
+  padding: 0 4px;
+  border: 2px solid white;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.26);
+}
+
+#music-menu-cava-wrap {
+  min-height: 240px;
+  margin-top: 8px;
+  justify-content: end;
+}
+
+#music-menu-cava {
+  opacity: 0.666;
+  margin: 0;
+  padding: 0;
+}
+
+#music-menu-controls {
+  margin-top: 0;
+  justify-content: end;
+}
+
+#music-menu-controls button {
+  border: 2px solid white;
+  border-radius: 14px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#clock-date {
+  background-color: #64727d;
+  border-radius: 24px 0 0 24px;
+  border-bottom: 3px solid white;
+  border-top: 3px solid white;
+  border-left: 3px solid white;
+}
+
+#clock-time {
+  animation: time-gradient 20s linear infinite;
+  background-repeat: repeat-x;
+  background: linear-gradient(105deg, #1f0a72, #490a80, #f1c40f, #1c045c, #240c5c);
+  background-size: 100% 100%;
+
+  margin-top: 4px;
+  margin-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+  font-size: 24px;
+  font-weight: 900;
+  border: 3px solid white;
+  border-radius: 8px;
+}
+
+@keyframes time-gradient {
+  0% {
+    background: linear-gradient(105deg, #1f0a72, #490a80, #f1c40f, #1c045c, #240c5c);
+    background-position: 0% 0%;
+  }
+  20% {
+    background: linear-gradient(105deg, #240c5c, #1f0a72, #490a80, #f1c40f, #1c045c);
+  }
+  40% {
+    background: linear-gradient(105deg, #1c045c, #240c5c, #1f0a72, #490a80, #f1c40f);
+  }
+  60% {
+    background: linear-gradient(105deg, #f1c40f, #1c045c, #240c5c, #1f0a72, #490a80);
+  }
+  80% {
+    background: linear-gradient(105deg, #490a80, #f1c40f, #1c045c, #240c5c, #1f0a72);
+  }
+  100% {
+    background: linear-gradient(105deg, #1f0a72, #490a80, #f1c40f, #1c045c, #240c5c);
+    background-position: 200% 0%;
+  }
+}
+
+#custom-notification {
+  padding-left: 6px;
+  padding-right: 6px;
+  background-color: #64727d;
+  border-radius: 0 24px 24px 0;
+  border-bottom: 3px solid white;
+  border-top: 3px solid white;
+  border-right: 3px solid white;
+}
+
+#tray {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+#tray button {
+  padding: 0 3px;
+  margin: 0;
+  box-shadow: none;
+}
+
+#tray button:hover {
+  box-shadow: none;
+  opacity: 0.95;
+}
+
+#tray-item-menu {
+  padding: 6px;
+}
+
+#tray-item-menu button {
+  padding: 2px 6px;
+  box-shadow: none;
+}
+
+#pipewire {
+  border-bottom: 3px solid #f1c40f;
+  min-height: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  transition: none;
+}
+
+#pipewire label {
+  text-align: center;
+  transition: none;
+}
+
+#pipewire:hover,
+#pipewire:focus {
+  opacity: 1;
+  box-shadow: none;
+}
+
+#pipewire.muted {
+  border-bottom: 3px solid #90b1b1;
+}
+
+#network {
+  border-bottom: 3px solid #2980b9;
+}
+
+#network.disconnected {
+  border-bottom: 3px solid #f53c3c;
+}
+
+#power-profiles-daemon.performance {
+  background-color: #f53c3c;
+}
+
+#power-profiles-daemon.balanced {
+  background-color: #2980b9;
+}
+
+#power-profiles-daemon.power-saver {
+  background-color: #2ecc71;
+  color: #000000;
+}
+
+#cpu {
+  background: rgba(28, 126, 69, 0.666);
+  border-radius: 24px 0 0 24px;
+  margin-right: 0;
+  padding-right: 4px;
+  border-right: 0px;
+}
+
+#memory {
+  background: rgba(79, 45, 92, 0.666);
+  border-radius: 0;
+  margin-right: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+  border-left: 0px;
+  border-right: 0px;
+}
+
+#temperature {
+  background: rgba(104, 64, 18, 0.666);
+  border-radius: 0 24px 24px 0;
+  padding-left: 4px;
+  border-left: 0px;
+}
+
+#temperature.critical {
+  background-color: #eb4d4b;
+}
+
+#keyboard-state {
+  background: #97e1ad;
+  color: #000000;
+  padding: 0 6px;
+  margin: 8px 5px 4px 5px;
+}
+
+#language {
+  border: 3px solid #00b093;
+  min-width: 72px;
+  max-width: 72px;
+  padding: 0;
+  text-align: center;
+  align-items: center;
+}
+
+#battery,
+#battery-bat2 {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+#battery.charging,
+#battery-bat2.charging,
+#battery.plugged,
+#battery-bat2.plugged {
+  color: #ffffff;
+  background-color: #26a65b;
+}
+
+#battery.critical,
+#battery-bat2.critical {
+  background-color: #f53c3c;
+  color: #ffffff;
+}
+
+#custom-media,
+#mpd {
+  background-color: #66cc99;
+  color: #2a5c45;
+}
+
+#custom-power {
+  border: 3px solid white;
+  border-radius: 24px;
+  background-color: rgba(102, 115, 128, 0.5);
+  margin-right: 4px;
+}
+
+#calendar-menu,
+#world-clock-menu,
+#weather-menu,
+#audio-menu,
+#wifi-menu {
+  border: 3px solid white;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.5);
+  min-width: 240px;
+  padding: 12px;
+  margin: 0;
+}
+
+#calendar-menu-month,
+#world-clock-menu-title,
+#weather-menu-title,
+#audio-menu-title,
+#wifi-menu-title {
+  font-size: 15px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+#calendar-menu-weekdays label {
+  opacity: 0.75;
+  font-size: 12px;
+}
+
+#calendar-menu-grid label {
+  min-width: 24px;
+  min-height: 18px;
+  border-radius: 8px;
+  padding: 2px 0;
+}
+
+#calendar-menu-grid label.today {
+  background: #f1c40f;
+  color: #000000;
+  font-weight: 900;
+}
+
+.world-clock-row,
+.weather-forecast-row {
+  font-size: 13px;
+  padding: 1px 0;
+}
+
+.audio-menu-section {
+  opacity: 0.75;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.wifi-title-row {
+  margin-bottom: 4px;
+  align-items: center;
+}
+
+.audio-device-row,
+.wifi-network-row {
+  font-size: 13px;
+  padding: 1px 0;
+}
+
+.audio-device-row.active,
+.wifi-network-row.active {
+  color: #f1c40f;
+  font-weight: 900;
+}
+
+.audio-device-button {
+  box-shadow: none;
+  padding: 0;
+}
+
+.audio-device-button:hover {
+  box-shadow: none;
+  opacity: 0.95;
+}
+
+.audio-slider-row {
+  margin-top: -2px;
+}
+
+.audio-device-slider {
+  min-width: 140px;
+}
+
+.audio-device-volume {
+  opacity: 0.85;
+  min-width: 38px;
+}
+
+.audio-device-muted {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+popover.status-popup,
+popover.status-popup:backdrop {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+popover.status-popup > contents {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
