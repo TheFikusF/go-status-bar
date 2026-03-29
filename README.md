@@ -1,8 +1,6 @@
 # status-bar
 
----
 ## It is written completely with AI and suits specifically MY needs, so use it at your own risk.
----
 
 A small custom status bar written in Go with GTK4.
 
