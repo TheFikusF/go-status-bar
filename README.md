@@ -1,6 +1,9 @@
-# status-bar
+<img width="1920" height="46" alt="image" src="https://github.com/user-attachments/assets/ff2cdee6-297f-4c94-af7e-c2cd32bd7f5e" />
 
-## It is written completely with AI and suits specifically MY needs, so use it at your own risk.
+# go-status-bar
+
+> [!WARNING]
+> It is written completely with AI and suits specifically MY needs, so use it at your own risk.
 
 A small custom status bar written in Go with GTK4.
 
