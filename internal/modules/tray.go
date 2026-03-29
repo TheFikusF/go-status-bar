@@ -3,6 +3,7 @@ package modules
 import (
 	"fmt"
 	"log"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,6 +14,142 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/godbus/dbus/v5"
 )
+
+// --- Embedded StatusNotifierWatcher implementation ---
+type statusNotifierWatcher struct {
+	conn  *dbus.Conn
+	items map[string]struct{}
+	hosts map[string]struct{}
+}
+
+// D-Bus introspection tags for godbus/dbus
+type watcherExport struct {
+	Watcher *statusNotifierWatcher
+}
+
+// Properties
+func (w *watcherExport) GetRegisteredStatusNotifierItems() ([]string, *dbus.Error) {
+	items := make([]string, 0, len(w.Watcher.items))
+	for k := range w.Watcher.items {
+		items = append(items, k)
+	}
+	return items, nil
+}
+func (w *watcherExport) GetIsStatusNotifierHostRegistered() (bool, *dbus.Error) {
+	return len(w.Watcher.hosts) > 0, nil
+}
+
+// Methods
+func (w *watcherExport) RegisterStatusNotifierItem(item string) *dbus.Error {
+	if _, exists := w.Watcher.items[item]; exists {
+		return nil
+	}
+	w.Watcher.items[item] = struct{}{}
+	w.Watcher.emitSignal("StatusNotifierItemRegistered", item)
+	w.Watcher.emitPropertiesChanged()
+	return nil
+}
+func (w *watcherExport) RegisterStatusNotifierHost(host string) *dbus.Error {
+	if _, exists := w.Watcher.hosts[host]; exists {
+		return nil
+	}
+	w.Watcher.hosts[host] = struct{}{}
+	w.Watcher.emitSignal("StatusNotifierHostRegistered", host)
+	w.Watcher.emitPropertiesChanged()
+	return nil
+}
+
+// D-Bus property handler for org.freedesktop.DBus.Properties
+func (w *watcherExport) Get(interfaceName, property string) (interface{}, *dbus.Error) {
+	if interfaceName != "org.kde.StatusNotifierWatcher" {
+		return nil, nil
+	}
+	switch property {
+	case "RegisteredStatusNotifierItems":
+		return w.GetRegisteredStatusNotifierItems()
+	case "IsStatusNotifierHostRegistered":
+		return w.GetIsStatusNotifierHostRegistered()
+	}
+	return nil, nil
+}
+
+// Unregistration (simulate vanishing by explicit call or timeout, for MVP just expose method)
+func (w *watcherExport) UnregisterStatusNotifierItem(item string) *dbus.Error {
+	if _, exists := w.Watcher.items[item]; exists {
+		delete(w.Watcher.items, item)
+		w.Watcher.emitSignal("StatusNotifierItemUnregistered", item)
+		w.Watcher.emitPropertiesChanged()
+	}
+	return nil
+}
+func (w *watcherExport) UnregisterStatusNotifierHost(host string) *dbus.Error {
+	if _, exists := w.Watcher.hosts[host]; exists {
+		delete(w.Watcher.hosts, host)
+		w.Watcher.emitSignal("StatusNotifierHostUnregistered", host)
+		w.Watcher.emitPropertiesChanged()
+	}
+	return nil
+}
+
+func (w *statusNotifierWatcher) emitSignal(signal string, value string) {
+	if w.conn != nil {
+		w.conn.Emit(
+			"/StatusNotifierWatcher",
+			"org.kde.StatusNotifierWatcher."+signal,
+			value,
+		)
+	}
+}
+func (w *statusNotifierWatcher) emitPropertiesChanged() {
+	if w.conn != nil {
+		changed := map[string]dbus.Variant{
+			"RegisteredStatusNotifierItems":  dbus.MakeVariant(w.keys(w.items)),
+			"IsStatusNotifierHostRegistered": dbus.MakeVariant(len(w.hosts) > 0),
+		}
+		w.conn.Emit(
+			"/StatusNotifierWatcher",
+			"org.freedesktop.DBus.Properties.PropertiesChanged",
+			"org.kde.StatusNotifierWatcher",
+			changed,
+			[]string{},
+		)
+	}
+}
+func (w *statusNotifierWatcher) keys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// Start embedded watcher if none is present
+func maybeStartEmbeddedWatcher() {
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		log.Printf("tray: failed to connect to session bus for watcher: %v", err)
+		return
+	}
+	reply, err := conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue)
+	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
+		conn.Close()
+		return // Another watcher is running
+	}
+	watcher := &statusNotifierWatcher{
+		conn:  conn,
+		items: make(map[string]struct{}),
+		hosts: make(map[string]struct{}),
+	}
+	export := &watcherExport{Watcher: watcher}
+	// Export methods and properties
+	conn.Export(export, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher")
+	conn.Export(export, "/StatusNotifierWatcher", "org.freedesktop.DBus.Properties")
+	log.Printf("tray: embedded StatusNotifierWatcher started on D-Bus")
+	// Keep connection alive
+	select {}
+}
+
+// Start embedded watcher if none is present
 
 type trayItem struct {
 	ID       string
@@ -45,7 +182,23 @@ func NewTray() gtk.Widgetter {
 	return container
 }
 
+func NewWatcherModule() {
+	go func() {
+		log.Printf("tray-watcher: starting snixembed as StatusNotifierWatcher...")
+		cmd := exec.Command("snixembed")
+		err := cmd.Start()
+		if err != nil {
+			log.Printf("tray-watcher: failed to start snixembed: %v", err)
+			return
+		}
+		log.Printf("tray-watcher: snixembed started with PID %d", cmd.Process.Pid)
+		cmd.Wait()
+		log.Printf("tray-watcher: snixembed exited")
+	}()
+}
+
 func runTrayHost(container *gtk.Box) {
+	go maybeStartEmbeddedWatcher()
 	for {
 		conn, err := dbus.ConnectSessionBus()
 		if err != nil {
@@ -53,7 +206,6 @@ func runTrayHost(container *gtk.Box) {
 			time.Sleep(3 * time.Second)
 			continue
 		}
-
 		runTraySession(conn, container)
 		_ = conn.Close()
 		ui(func() { container.SetVisible(false) })
@@ -68,23 +220,30 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 	)
 
 	watcher := conn.Object(watcherBus, watcherPath)
+	log.Printf("tray: pinging StatusNotifierWatcher on bus %s, path %s", watcherBus, watcherPath)
 	if err := watcher.Call("org.freedesktop.DBus.Peer.Ping", 0).Err; err != nil {
+		log.Printf("tray: StatusNotifierWatcher not found or not responding: %v", err)
 		return
 	}
 
 	hostName := fmt.Sprintf("org.kde.StatusNotifierHost-%d", time.Now().UnixNano())
+	log.Printf("tray: requesting name %s", hostName)
 	if _, err := conn.RequestName(hostName, dbus.NameFlagDoNotQueue); err != nil {
 		log.Printf("tray: host request name failed: %v", err)
 	}
+	log.Printf("tray: registering as StatusNotifierHost")
 	if err := watcher.Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierHost", 0, hostName).Err; err != nil {
 		log.Printf("tray: host register failed: %v", err)
 	}
 
 	var lastItemsKey string
 	refresh := func() {
+		log.Printf("tray: refreshing tray items...")
 		items := readTrayItems(conn, watcher)
+		log.Printf("tray: found %d tray items", len(items))
 		key := trayItemsKey(items)
 		if key == lastItemsKey {
+			log.Printf("tray: tray items unchanged")
 			return
 		}
 		lastItemsKey = key

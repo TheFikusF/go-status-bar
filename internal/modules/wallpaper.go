@@ -54,9 +54,8 @@ func shuffleWallpaper() (string, error) {
 	}
 
 	wallpaper := files[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(files))]
-	started := ensureHyprpaper()
-	if started {
-		time.Sleep(time.Second)
+	if err := ensureHyprpaper(); err != nil {
+		return "", err
 	}
 
 	_, _ = runCommand("hyprctl", "hyprpaper", "preload", wallpaper)
@@ -98,13 +97,23 @@ func listWallpaperFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-func ensureHyprpaper() bool {
+func ensureHyprpaper() error {
 	if processRunning("hyprpaper") {
-		return false
+		return nil
 	}
 
 	runDetached("hyprpaper")
-	return true
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if processRunning("hyprpaper") {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("wallpaper: hyprpaper did not start")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func processRunning(name string) bool {
