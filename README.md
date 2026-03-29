@@ -17,6 +17,13 @@ A small custom status bar written in Go with GTK4.
 go run .
 ```
 
+By default the bar uses the CSS embedded from `styles/bar.css`.
+If present, it will override that with:
+
+```bash
+$HOME/.config/status-bar/style.css
+```
+
 ## Build
 
 ```bash

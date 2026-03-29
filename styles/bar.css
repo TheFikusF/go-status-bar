@@ -2,7 +2,7 @@
   font-family: "0xProto NL", "Symbols Nerd Font Mono", monospace;
 }
 
-window#waybar {
+window#status-bar {
   background-color: rgba(0, 0, 0, 0);
   color: #ffffff;
 }

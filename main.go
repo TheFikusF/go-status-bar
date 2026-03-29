@@ -14,7 +14,7 @@ const appID = "dev.fikus.statusbar"
 func main() {
 	application := gtk.NewApplication(appID, gio.ApplicationFlagsNone)
 	application.ConnectActivate(func() {
-		window := app.New(application)
+		window := app.New(application, defaultCSS)
 		window.Present()
 	})
 

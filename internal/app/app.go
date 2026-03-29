@@ -3,6 +3,7 @@ package app
 import (
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -10,18 +11,18 @@ import (
 	"statusbar/internal/modules"
 )
 
-const cssPath = "styles/bar.css"
+const userCSSRelativePath = ".config/status-bar/style.css"
 
-func New(application *gtk.Application) *gtk.ApplicationWindow {
-	loadCSS()
+func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow {
+	loadCSS(defaultCSS)
 
 	window := gtk.NewApplicationWindow(application)
-	window.SetTitle("Waybar Clone")
+	window.SetTitle("Status Bar")
 	window.SetDecorated(false)
 	window.SetDeletable(false)
 	window.SetResizable(false)
 	window.SetDefaultSize(1920, 34)
-	window.SetName("waybar")
+	window.SetName("status-bar")
 
 	initLayerShell(window)
 
@@ -82,19 +83,35 @@ func New(application *gtk.Application) *gtk.ApplicationWindow {
 	return window
 }
 
-func loadCSS() {
-	css, err := os.ReadFile(cssPath)
-	if err != nil {
-		log.Printf("css load skipped: %v", err)
-		return
-	}
-
+func loadCSS(defaultCSS string) {
 	display := gdk.DisplayGetDefault()
 	if display == nil {
 		return
 	}
 
+	css := defaultCSS
+	if path, ok := userCSSPath(); ok {
+		if userCSS, err := os.ReadFile(path); err == nil {
+			css = string(userCSS)
+			log.Printf("loaded css override from %s", path)
+		} else if !os.IsNotExist(err) {
+			log.Printf("css override skipped: %v", err)
+		}
+	}
+	if css == "" {
+		log.Printf("css load skipped: embedded css is empty")
+		return
+	}
+
 	provider := gtk.NewCSSProvider()
-	provider.LoadFromString(string(css))
+	provider.LoadFromString(css)
 	gtk.StyleContextAddProviderForDisplay(display, provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+}
+
+func userCSSPath() (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	return filepath.Join(home, userCSSRelativePath), true
 }
