@@ -6,148 +6,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"statusbar/internal/services"
 	"strings"
 	"time"
+
+	"os"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/godbus/dbus/v5"
 )
-
-// --- Embedded StatusNotifierWatcher implementation ---
-type statusNotifierWatcher struct {
-	conn  *dbus.Conn
-	items map[string]struct{}
-	hosts map[string]struct{}
-}
-
-// D-Bus introspection tags for godbus/dbus
-type watcherExport struct {
-	Watcher *statusNotifierWatcher
-}
-
-// Properties
-func (w *watcherExport) GetRegisteredStatusNotifierItems() ([]string, *dbus.Error) {
-	items := make([]string, 0, len(w.Watcher.items))
-	for k := range w.Watcher.items {
-		items = append(items, k)
-	}
-	return items, nil
-}
-func (w *watcherExport) GetIsStatusNotifierHostRegistered() (bool, *dbus.Error) {
-	return len(w.Watcher.hosts) > 0, nil
-}
-
-// Methods
-func (w *watcherExport) RegisterStatusNotifierItem(item string) *dbus.Error {
-	if _, exists := w.Watcher.items[item]; exists {
-		return nil
-	}
-	w.Watcher.items[item] = struct{}{}
-	w.Watcher.emitSignal("StatusNotifierItemRegistered", item)
-	w.Watcher.emitPropertiesChanged()
-	return nil
-}
-func (w *watcherExport) RegisterStatusNotifierHost(host string) *dbus.Error {
-	if _, exists := w.Watcher.hosts[host]; exists {
-		return nil
-	}
-	w.Watcher.hosts[host] = struct{}{}
-	w.Watcher.emitSignal("StatusNotifierHostRegistered", host)
-	w.Watcher.emitPropertiesChanged()
-	return nil
-}
-
-// D-Bus property handler for org.freedesktop.DBus.Properties
-func (w *watcherExport) Get(interfaceName, property string) (interface{}, *dbus.Error) {
-	if interfaceName != "org.kde.StatusNotifierWatcher" {
-		return nil, nil
-	}
-	switch property {
-	case "RegisteredStatusNotifierItems":
-		return w.GetRegisteredStatusNotifierItems()
-	case "IsStatusNotifierHostRegistered":
-		return w.GetIsStatusNotifierHostRegistered()
-	}
-	return nil, nil
-}
-
-// Unregistration (simulate vanishing by explicit call or timeout, for MVP just expose method)
-func (w *watcherExport) UnregisterStatusNotifierItem(item string) *dbus.Error {
-	if _, exists := w.Watcher.items[item]; exists {
-		delete(w.Watcher.items, item)
-		w.Watcher.emitSignal("StatusNotifierItemUnregistered", item)
-		w.Watcher.emitPropertiesChanged()
-	}
-	return nil
-}
-func (w *watcherExport) UnregisterStatusNotifierHost(host string) *dbus.Error {
-	if _, exists := w.Watcher.hosts[host]; exists {
-		delete(w.Watcher.hosts, host)
-		w.Watcher.emitSignal("StatusNotifierHostUnregistered", host)
-		w.Watcher.emitPropertiesChanged()
-	}
-	return nil
-}
-
-func (w *statusNotifierWatcher) emitSignal(signal string, value string) {
-	if w.conn != nil {
-		w.conn.Emit(
-			"/StatusNotifierWatcher",
-			"org.kde.StatusNotifierWatcher."+signal,
-			value,
-		)
-	}
-}
-func (w *statusNotifierWatcher) emitPropertiesChanged() {
-	if w.conn != nil {
-		changed := map[string]dbus.Variant{
-			"RegisteredStatusNotifierItems":  dbus.MakeVariant(w.keys(w.items)),
-			"IsStatusNotifierHostRegistered": dbus.MakeVariant(len(w.hosts) > 0),
-		}
-		w.conn.Emit(
-			"/StatusNotifierWatcher",
-			"org.freedesktop.DBus.Properties.PropertiesChanged",
-			"org.kde.StatusNotifierWatcher",
-			changed,
-			[]string{},
-		)
-	}
-}
-func (w *statusNotifierWatcher) keys(m map[string]struct{}) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
-}
-
-// Start embedded watcher if none is present
-func maybeStartEmbeddedWatcher() {
-	conn, err := dbus.ConnectSessionBus()
-	if err != nil {
-		log.Printf("tray: failed to connect to session bus for watcher: %v", err)
-		return
-	}
-	reply, err := conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue)
-	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
-		conn.Close()
-		return // Another watcher is running
-	}
-	watcher := &statusNotifierWatcher{
-		conn:  conn,
-		items: make(map[string]struct{}),
-		hosts: make(map[string]struct{}),
-	}
-	export := &watcherExport{Watcher: watcher}
-	// Export methods and properties
-	conn.Export(export, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher")
-	conn.Export(export, "/StatusNotifierWatcher", "org.freedesktop.DBus.Properties")
-	log.Printf("tray: embedded StatusNotifierWatcher started on D-Bus")
-	// Keep connection alive
-	select {}
-}
 
 // Start embedded watcher if none is present
 
@@ -177,9 +46,61 @@ func NewTray() gtk.Widgetter {
 	container.AddCSSClass("module")
 	container.SetVisible(false)
 
+	// Detect and log tray compatibility
+	if services.AppIndicatorAvailable() {
+		log.Printf("[tray] AppIndicator service detected: legacy tray icons (like Electron apps) may be supported via AppIndicator.")
+	} else {
+		log.Printf("[tray] AppIndicator service NOT detected: legacy tray icons (like Electron apps) may NOT be visible unless you install an AppIndicator bridge.")
+	}
+
+	maybeStartXembedSNIProxy()
+
 	go runTrayHost(container)
 
 	return container
+}
+
+func maybeStartXembedSNIProxy() {
+	_, err := exec.LookPath("xembed-sni-proxy")
+	if err != nil {
+		log.Printf("[tray] xembed-sni-proxy not found in PATH, XEmbed tray icons will not be bridged.")
+		return
+	}
+	cmd := exec.Command("xembed-sni-proxy")
+	err = cmd.Start()
+	if err != nil {
+		log.Printf("[tray] Failed to start xembed-sni-proxy: %v", err)
+		return
+	}
+	log.Printf("[tray] xembed-sni-proxy started with PID %d", cmd.Process.Pid)
+}
+
+// Detects if AppIndicator or xdg-desktop-portal is available and logs the result
+func detectTrayCompatibility() {
+	appIndicatorFound := binaryExists("indicator-application-service") || binaryExists("indicator-application") || binaryExists("/usr/lib/x86_64-linux-gnu/indicator-application/indicator-application-service")
+	xdgPortalFound := binaryExists("xdg-desktop-portal")
+
+	if appIndicatorFound {
+		log.Printf("[tray] AppIndicator service detected: legacy tray icons (like Electron apps) may be supported via AppIndicator.")
+	} else {
+		log.Printf("[tray] AppIndicator service NOT detected: legacy tray icons (like Electron apps) may NOT be visible unless you install an AppIndicator bridge.")
+	}
+
+	if xdgPortalFound {
+		log.Printf("[tray] xdg-desktop-portal detected: tray icons may be available via portal integration.")
+	} else {
+		log.Printf("[tray] xdg-desktop-portal NOT detected: tray icons via portal may NOT be available.")
+	}
+}
+
+// Checks if a binary exists in PATH or at a given path
+func binaryExists(name string) bool {
+	if strings.HasPrefix(name, "/") {
+		_, err := os.Stat(name)
+		return err == nil
+	}
+	_, err := exec.LookPath(name)
+	return err == nil
 }
 
 func NewWatcherModule() {
@@ -198,7 +119,7 @@ func NewWatcherModule() {
 }
 
 func runTrayHost(container *gtk.Box) {
-	go maybeStartEmbeddedWatcher()
+	go services.MaybeStartEmbeddedWatcher()
 	for {
 		conn, err := dbus.ConnectSessionBus()
 		if err != nil {
@@ -345,18 +266,47 @@ func trayItemsKey(items []trayItem) string {
 }
 
 func readTrayItems(conn *dbus.Conn, watcher dbus.BusObject) []trayItem {
+	// Try AppIndicator first
+	if services.AppIndicatorAvailable() {
+		log.Printf("[tray] Trying AppIndicator protocol...")
+		ids := services.AppIndicatorTrayItems()
+		log.Printf("[tray] AppIndicatorTrayItems returned: %v", ids)
+		if ids != nil && len(ids) > 0 {
+			items := make([]trayItem, 0, len(ids))
+			for _, id := range ids {
+				bus, path, ok := parseTrayItemID(id)
+				if !ok {
+					continue
+				}
+				item, ok := readTrayItem(conn, id, bus, path)
+				if !ok {
+					continue
+				}
+				items = append(items, item)
+			}
+			sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+			log.Printf("[tray] Using AppIndicator tray items: %v", items)
+			return items
+		}
+	}
+
+	// Fallback to SNI watcher
+	log.Printf("[tray] Falling back to SNI/StatusNotifier protocol...")
 	call := watcher.Call("org.freedesktop.DBus.Properties.Get", 0, "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems")
 	if call.Err != nil {
+		log.Printf("[tray] SNI watcher call failed: %v", call.Err)
 		return nil
 	}
 
 	variant := dbus.Variant{}
 	if err := call.Store(&variant); err != nil {
+		log.Printf("[tray] SNI watcher variant store failed: %v", err)
 		return nil
 	}
 
 	registered, ok := variant.Value().([]string)
 	if !ok {
+		log.Printf("[tray] SNI watcher returned non-string slice: %v", variant.Value())
 		return nil
 	}
 
@@ -375,6 +325,7 @@ func readTrayItems(conn *dbus.Conn, watcher dbus.BusObject) []trayItem {
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	log.Printf("[tray] Using SNI tray items: %v", items)
 	return items
 }
 
