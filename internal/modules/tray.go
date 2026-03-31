@@ -434,6 +434,7 @@ func newTrayItemWidget(conn *dbus.Conn, item trayItem) gtk.Widgetter {
 	button.SetTooltipText(item.Title)
 
 	menu := gtk.NewPopover()
+	menu.AddCSSClass("status-popup")
 	menu.SetHasArrow(false)
 	menu.SetAutohide(true)
 	menu.SetParent(button)

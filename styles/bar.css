@@ -19,6 +19,7 @@ button:hover {
   background: inherit;
   box-shadow: 0 3px #ffffff;
   opacity: 0.8;
+  /* border-bottom: 3px solid white; */
 }
 
 .module,
@@ -428,14 +429,6 @@ button:hover {
   opacity: 0.95;
 }
 
-#tray-item-menu {
-  padding: 6px;
-}
-
-#tray-item-menu button {
-  padding: 2px 6px;
-  box-shadow: none;
-}
 
 #pipewire {
   border-bottom: 3px solid #f1c40f;
@@ -563,18 +556,28 @@ button:hover {
 #world-clock-menu,
 #weather-menu,
 #audio-menu,
+#workspace-popup,
+#wallpaper-menu,
+#tray-item-menu,
+#power-menu,
 #wifi-menu {
   border: 3px solid white;
   border-radius: 14px;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.85);
   min-width: 240px;
   padding: 12px;
   margin: 0;
 }
 
+#tray-item-menu button {
+  padding: 2px 6px;
+  box-shadow: none;
+}
+
 #calendar-menu-month,
 #world-clock-menu-title,
 #weather-menu-title,
+#wallpaper-menu-title,
 #audio-menu-title,
 #wifi-menu-title {
   font-size: 15px;

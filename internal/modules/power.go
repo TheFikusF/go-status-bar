@@ -8,11 +8,13 @@ func NewPower() gtk.Widgetter {
 	button.SetName("custom-power")
 
 	popover := gtk.NewPopover()
+	popover.AddCSSClass("status-popup")
 	popover.SetHasArrow(false)
 	popover.SetAutohide(true)
 	popover.SetParent(button)
 
 	list := gtk.NewBox(gtk.OrientationVertical, 4)
+	list.SetName("power-menu")
 	actions := []struct {
 		label string
 		cmd   []string

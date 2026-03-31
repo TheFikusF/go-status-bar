@@ -21,10 +21,32 @@ func NewDateClock() gtk.Widgetter {
 	menu.SetName("calendar-menu")
 	popover.SetChild(menu)
 
+	// Create a horizontal box for month navigation
+	monthNavBox := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	monthNavBox.SetHAlign(gtk.AlignFill)
+	monthNavBox.SetHExpand(true)
+	monthNavBox.SetName("calendar-menu-month-nav")
+
+	// Make children expand appropriately
+	prevBtn := gtk.NewButton()
+	prevBtn.SetLabel("<")
+	prevBtn.SetTooltipText("Previous month")
+	prevBtn.SetHAlign(gtk.AlignStart)
+	monthNavBox.Append(prevBtn)
+
 	monthLabel := gtk.NewLabel("")
 	monthLabel.SetName("calendar-menu-month")
-	monthLabel.SetXAlign(0)
-	menu.Append(monthLabel)
+	monthLabel.SetXAlign(0.5) // Center label
+	monthLabel.SetHExpand(true)
+	monthNavBox.Append(monthLabel)
+
+	nextBtn := gtk.NewButton()
+	nextBtn.SetLabel(">")
+	nextBtn.SetTooltipText("Next month")
+	nextBtn.SetHAlign(gtk.AlignEnd)
+	monthNavBox.Append(nextBtn)
+
+	menu.Append(monthNavBox)
 
 	weekdayRow := gtk.NewGrid()
 	weekdayRow.SetColumnHomogeneous(true)
@@ -56,14 +78,25 @@ func NewDateClock() gtk.Widgetter {
 	}
 
 	attachHoverPopover(module.Box, popover, func() { runDetached("gnome-calendar") }, nil)
-	startPolling(time.Second, func() {
+	// State for displayed month/year
+	type monthState struct {
+		year  int
+		month time.Month
+	}
+	var shown monthState
+	var today time.Time
+
+	updateCalendar := func() {
 		now := time.Now()
 		display := now.Format("Mon 02, Jan")
-		monthText := now.Format("January 2006")
-		daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
-		firstWeekday := int(time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Weekday())
+		monthText := time.Date(shown.year, shown.month, 1, 0, 0, 0, 0, now.Location()).Format("January 2006")
+		daysInMonth := time.Date(shown.year, shown.month+1, 0, 0, 0, 0, 0, now.Location()).Day()
+		firstWeekday := int(time.Date(shown.year, shown.month, 1, 0, 0, 0, 0, now.Location()).Weekday())
 		startOffset := (firstWeekday + 6) % 7
-		currentDay := now.Day()
+		currentDay := 0
+		if shown.year == today.Year() && shown.month == today.Month() {
+			currentDay = today.Day()
+		}
 
 		ui(func() {
 			setTextModule(module, display)
@@ -86,7 +119,44 @@ func NewDateClock() gtk.Widgetter {
 				}
 			}
 		})
+	}
+
+	// Set up initial state
+	today = time.Now()
+	shown = monthState{year: today.Year(), month: today.Month()}
+
+	// Button handlers
+	prevBtn.ConnectClicked(func() {
+		if shown.month == time.January {
+			shown.month = time.December
+			shown.year--
+		} else {
+			shown.month--
+		}
+		updateCalendar()
 	})
+	nextBtn.ConnectClicked(func() {
+		if shown.month == time.December {
+			shown.month = time.January
+			shown.year++
+		} else {
+			shown.month++
+		}
+		updateCalendar()
+	})
+
+	// Polling for live update
+	startPolling(time.Second, func() {
+		now := time.Now()
+		today = now
+		// If showing current month, update calendar
+		if shown.year == now.Year() && shown.month == now.Month() {
+			updateCalendar()
+		}
+	})
+
+	// Initial render
+	updateCalendar()
 	return module.Box
 }
 
@@ -149,7 +219,7 @@ func readWorldClocks() []struct {
 } {
 	value := strings.TrimSpace(os.Getenv("STATUSBAR_WORLD_CLOCKS"))
 	if value == "" {
-		value = "Prague=Europe/Prague,New York=America/New_York,Tel Aviv=Asia/Tel_Aviv,Kyiv=Europe/Kyiv,San Francisco=America/Los_Angeles"
+		value = "Prague=Europe/Prague,New York=America/New_York,Tel Aviv=Asia/Tel_Aviv,Kyiv=Europe/Kyiv,San Francisco=America/Los_Angeles,MAUI=Pacific/Honolulu"
 	}
 
 	entries := strings.Split(value, ",")

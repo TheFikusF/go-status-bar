@@ -92,6 +92,38 @@ func NewWorkspaces() gtk.Widgetter {
 					button.AddCSSClass("active")
 				}
 
+				// Create popover for window titles
+				popover := gtk.NewPopover()
+				popover.AddCSSClass("status-popup")
+				popover.SetHasArrow(false)
+				popover.SetAutohide(true)
+				popover.SetParent(button)
+
+				// Function to update popover content
+				updatePopover := func() {
+					vbox := gtk.NewBox(gtk.OrientationVertical, 4)
+					vbox.SetName("workspace-popup")
+
+					clients := workspaces[id]
+					if len(clients) == 0 {
+						label := gtk.NewLabel("(empty)")
+						vbox.Append(label)
+					} else {
+						for _, client := range clients {
+							title := strings.TrimSpace(client.Title)
+							if title == "" {
+								title = "(untitled)"
+							}
+							label := gtk.NewLabel(title)
+							vbox.Append(label)
+						}
+					}
+					popover.SetChild(vbox)
+				}
+
+				// Update popover before open
+				attachHoverPopover(button, popover, nil, updatePopover)
+
 				workspaceID := id
 				button.ConnectClicked(func() {
 					runDetached("hyprctl", "dispatch", "workspace", fmt.Sprintf("%d", workspaceID))

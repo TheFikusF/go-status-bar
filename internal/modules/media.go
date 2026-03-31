@@ -20,20 +20,20 @@ import (
 )
 
 type mprisInfo struct {
-	Bus      string
-	Player   string
-	Artist   string
-	Album    string
-	Title    string
-	Text     string
-	ArtURL   string
-	Playing  bool
-	CanSeek  bool
+	Bus       string
+	Player    string
+	Artist    string
+	Album     string
+	Title     string
+	Text      string
+	ArtURL    string
+	Playing   bool
+	CanSeek   bool
 	HasVolume bool
-	TrackID  dbus.ObjectPath
-	Length   int64
-	Position int64
-	Volume   float64
+	TrackID   dbus.ObjectPath
+	Length    int64
+	Position  int64
+	Volume    float64
 }
 
 type cavaColor struct {
@@ -608,13 +608,13 @@ func readMPRIS() mprisInfo {
 		artist := firstString(metadata["xesam:artist"])
 		album := mediaVariantString(metadata["xesam:album"])
 		title := mediaVariantString(metadata["xesam:title"])
-			artURL := mediaVariantString(metadata["mpris:artUrl"])
-			trackID := mediaVariantObjectPath(metadata["mpris:trackid"])
-			length := mediaVariantInt64(metadata["mpris:length"])
-			position := propertyInt64(obj, "org.mpris.MediaPlayer2.Player.Position")
-			canSeek := propertyBool(obj, "org.mpris.MediaPlayer2.Player.CanSeek")
-			volume, hasVolume := propertyFloat64(obj, "org.mpris.MediaPlayer2.Player.Volume")
-			player := strings.TrimPrefix(name, "org.mpris.MediaPlayer2.")
+		artURL := mediaVariantString(metadata["mpris:artUrl"])
+		trackID := mediaVariantObjectPath(metadata["mpris:trackid"])
+		length := mediaVariantInt64(metadata["mpris:length"])
+		position := propertyInt64(obj, "org.mpris.MediaPlayer2.Player.Position")
+		canSeek := propertyBool(obj, "org.mpris.MediaPlayer2.Player.CanSeek")
+		volume, hasVolume := propertyFloat64(obj, "org.mpris.MediaPlayer2.Player.Volume")
+		player := strings.TrimPrefix(name, "org.mpris.MediaPlayer2.")
 
 		text := strings.TrimSpace(strings.TrimSpace(artist) + " - " + strings.TrimSpace(title))
 		if text == "-" {
@@ -622,21 +622,21 @@ func readMPRIS() mprisInfo {
 		}
 
 		candidate := mprisInfo{
-			Bus:      name,
-			Player:   player,
-			Artist:   artist,
-			Album:    album,
-			Title:    title,
-			Text:     text,
-				ArtURL:   artURL,
-				Playing:  strings.EqualFold(status, "Playing"),
-				CanSeek:  canSeek,
-				HasVolume: hasVolume,
-				TrackID:  trackID,
-				Length:   length,
-				Position: position,
-				Volume:   volume,
-			}
+			Bus:       name,
+			Player:    player,
+			Artist:    artist,
+			Album:     album,
+			Title:     title,
+			Text:      text,
+			ArtURL:    artURL,
+			Playing:   strings.EqualFold(status, "Playing"),
+			CanSeek:   canSeek,
+			HasVolume: hasVolume,
+			TrackID:   trackID,
+			Length:    length,
+			Position:  position,
+			Volume:    volume,
+		}
 
 		if best.Bus == "" {
 			best = candidate
@@ -1164,17 +1164,17 @@ func cavaBarColors(level float64) (cavaColor, cavaColor, cavaColor) {
 
 	bottom := paletteCavaColor(level,
 		cavaColor{r: 1.00, g: 1.00, b: 1.00, a: 0.30},
-		cavaColor{r: 0.06, g: 0.55, b: 0.42, a: 0.48},
-		cavaColor{r: 0.50, g: 0.18, b: 0.15, a: 0.70},
+		cavaColor{r: 0.75, g: 0.55, b: 0.55, a: 0.48},
+		cavaColor{r: 0.00, g: 0.00, b: 1.00, a: 0.88},
 	)
 	middle := paletteCavaColor(level,
 		cavaColor{r: 1.00, g: 1.00, b: 1.00, a: 0.55},
-		cavaColor{r: 0.98, g: 0.78, b: 0.18, a: 0.78},
-		cavaColor{r: 0.98, g: 0.48, b: 0.20, a: 0.90},
+		cavaColor{r: 0.98, g: 0.78, b: 0.60, a: 0.78},
+		cavaColor{r: 1.00, g: 0.80, b: 0.00, a: 0.96},
 	)
 	top := paletteCavaColor(level,
 		cavaColor{r: 1.00, g: 1.00, b: 1.00, a: 0.88},
-		cavaColor{r: 1.00, g: 0.90, b: 0.32, a: 0.96},
+		cavaColor{r: 1.00, g: 0.70, b: 0.60, a: 0.96},
 		cavaColor{r: 1.00, g: 0.34, b: 0.20, a: 1.00},
 	)
 
