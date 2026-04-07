@@ -63,6 +63,7 @@ func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow
 	for _, widget := range []gtk.Widgetter{
 		modules.NewMPD(),
 		modules.NewWallpaper(),
+		modules.NewClipboard(),
 		modules.NewWeather(),
 		modules.NewPipewire(),
 		modules.NewNetwork(),

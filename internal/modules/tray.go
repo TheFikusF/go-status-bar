@@ -3,17 +3,16 @@ package modules
 import (
 	"fmt"
 	"log"
-	"os/exec"
+	"os"
 	"path/filepath"
 	"sort"
 	"statusbar/internal/services"
 	"strings"
 	"time"
 
-	"os"
-
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/godbus/dbus/v5"
 )
@@ -21,13 +20,17 @@ import (
 // Start embedded watcher if none is present
 
 type trayItem struct {
-	ID       string
-	Bus      string
-	Path     dbus.ObjectPath
-	MenuPath dbus.ObjectPath
-	IconName string
-	IconSpec string
-	Title    string
+	ID            string
+	Bus           string
+	Path          dbus.ObjectPath
+	MenuPath      dbus.ObjectPath
+	IconName      string
+	IconSpec      string
+	IconPixmap    []byte
+	IconPixmapW   int32
+	IconPixmapH   int32
+	IconThemePath string
+	Title         string
 }
 
 type dbusMenuNode struct {
@@ -45,81 +48,15 @@ func NewTray() gtk.Widgetter {
 	container.SetName("tray")
 	container.AddCSSClass("module")
 	container.SetVisible(false)
-
-	// Detect and log tray compatibility
-	if services.AppIndicatorAvailable() {
-		log.Printf("[tray] AppIndicator service detected: legacy tray icons (like Electron apps) may be supported via AppIndicator.")
-	} else {
-		log.Printf("[tray] AppIndicator service NOT detected: legacy tray icons (like Electron apps) may NOT be visible unless you install an AppIndicator bridge.")
-	}
-
-	maybeStartXembedSNIProxy()
-
 	go runTrayHost(container)
-
 	return container
 }
 
-func maybeStartXembedSNIProxy() {
-	_, err := exec.LookPath("xembed-sni-proxy")
-	if err != nil {
-		log.Printf("[tray] xembed-sni-proxy not found in PATH, XEmbed tray icons will not be bridged.")
-		return
-	}
-	cmd := exec.Command("xembed-sni-proxy")
-	err = cmd.Start()
-	if err != nil {
-		log.Printf("[tray] Failed to start xembed-sni-proxy: %v", err)
-		return
-	}
-	log.Printf("[tray] xembed-sni-proxy started with PID %d", cmd.Process.Pid)
-}
-
-// Detects if AppIndicator or xdg-desktop-portal is available and logs the result
-func detectTrayCompatibility() {
-	appIndicatorFound := binaryExists("indicator-application-service") || binaryExists("indicator-application") || binaryExists("/usr/lib/x86_64-linux-gnu/indicator-application/indicator-application-service")
-	xdgPortalFound := binaryExists("xdg-desktop-portal")
-
-	if appIndicatorFound {
-		log.Printf("[tray] AppIndicator service detected: legacy tray icons (like Electron apps) may be supported via AppIndicator.")
-	} else {
-		log.Printf("[tray] AppIndicator service NOT detected: legacy tray icons (like Electron apps) may NOT be visible unless you install an AppIndicator bridge.")
-	}
-
-	if xdgPortalFound {
-		log.Printf("[tray] xdg-desktop-portal detected: tray icons may be available via portal integration.")
-	} else {
-		log.Printf("[tray] xdg-desktop-portal NOT detected: tray icons via portal may NOT be available.")
-	}
-}
-
-// Checks if a binary exists in PATH or at a given path
-func binaryExists(name string) bool {
-	if strings.HasPrefix(name, "/") {
-		_, err := os.Stat(name)
-		return err == nil
-	}
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
-func NewWatcherModule() {
-	go func() {
-		log.Printf("tray-watcher: starting snixembed as StatusNotifierWatcher...")
-		cmd := exec.Command("snixembed")
-		err := cmd.Start()
-		if err != nil {
-			log.Printf("tray-watcher: failed to start snixembed: %v", err)
-			return
-		}
-		log.Printf("tray-watcher: snixembed started with PID %d", cmd.Process.Pid)
-		cmd.Wait()
-		log.Printf("tray-watcher: snixembed exited")
-	}()
-}
-
 func runTrayHost(container *gtk.Box) {
-	go services.MaybeStartEmbeddedWatcher()
+	// Derive a stable host name from our PID so it matches the name
+	// pre-registered inside MaybeStartEmbeddedWatcher.
+	hostName := fmt.Sprintf("org.kde.StatusNotifierHost-%d", os.Getpid())
+	go services.MaybeStartEmbeddedWatcher(hostName)
 	for {
 		conn, err := dbus.ConnectSessionBus()
 		if err != nil {
@@ -147,7 +84,7 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 		return
 	}
 
-	hostName := fmt.Sprintf("org.kde.StatusNotifierHost-%d", time.Now().UnixNano())
+	hostName := fmt.Sprintf("org.kde.StatusNotifierHost-%d", os.Getpid())
 	log.Printf("tray: requesting name %s", hostName)
 	if _, err := conn.RequestName(hostName, dbus.NameFlagDoNotQueue); err != nil {
 		log.Printf("tray: host request name failed: %v", err)
@@ -174,6 +111,9 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 
 	if err := conn.AddMatchSignal(dbus.WithMatchInterface("org.kde.StatusNotifierWatcher")); err != nil {
 		log.Printf("tray: watcher match failed: %v", err)
+	}
+	if err := conn.AddMatchSignal(dbus.WithMatchInterface("org.kde.StatusNotifierItem")); err != nil {
+		log.Printf("tray: item match failed: %v", err)
 	}
 	if err := conn.AddMatchSignal(
 		dbus.WithMatchInterface("org.freedesktop.DBus.Properties"),
@@ -227,6 +167,15 @@ func traySignalNeedsRefresh(signal *dbus.Signal, watcherBus string) bool {
 	case "org.kde.StatusNotifierWatcher.StatusNotifierItemRegistered",
 		"org.kde.StatusNotifierWatcher.StatusNotifierItemUnregistered":
 		return true
+	// Per-item property signals emitted by the item itself
+	case "org.kde.StatusNotifierItem.NewIcon",
+		"org.kde.StatusNotifierItem.NewAttentionIcon",
+		"org.kde.StatusNotifierItem.NewOverlayIcon",
+		"org.kde.StatusNotifierItem.NewIconThemePath",
+		"org.kde.StatusNotifierItem.NewStatus",
+		"org.kde.StatusNotifierItem.NewTitle",
+		"org.kde.StatusNotifierItem.NewToolTip":
+		return true
 	case "org.freedesktop.DBus.NameOwnerChanged":
 		if len(signal.Body) == 0 {
 			return false
@@ -257,6 +206,8 @@ func trayItemsKey(items []trayItem) string {
 		builder.WriteByte('|')
 		builder.WriteString(item.IconSpec)
 		builder.WriteByte('|')
+		fmt.Fprintf(&builder, "%d", len(item.IconPixmap))
+		builder.WriteByte('|')
 		builder.WriteString(item.Title)
 		builder.WriteByte('|')
 		builder.WriteString(string(item.MenuPath))
@@ -266,32 +217,6 @@ func trayItemsKey(items []trayItem) string {
 }
 
 func readTrayItems(conn *dbus.Conn, watcher dbus.BusObject) []trayItem {
-	// Try AppIndicator first
-	if services.AppIndicatorAvailable() {
-		log.Printf("[tray] Trying AppIndicator protocol...")
-		ids := services.AppIndicatorTrayItems()
-		log.Printf("[tray] AppIndicatorTrayItems returned: %v", ids)
-		if ids != nil && len(ids) > 0 {
-			items := make([]trayItem, 0, len(ids))
-			for _, id := range ids {
-				bus, path, ok := parseTrayItemID(id)
-				if !ok {
-					continue
-				}
-				item, ok := readTrayItem(conn, id, bus, path)
-				if !ok {
-					continue
-				}
-				items = append(items, item)
-			}
-			sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-			log.Printf("[tray] Using AppIndicator tray items: %v", items)
-			return items
-		}
-	}
-
-	// Fallback to SNI watcher
-	log.Printf("[tray] Falling back to SNI/StatusNotifier protocol...")
 	call := watcher.Call("org.freedesktop.DBus.Properties.Get", 0, "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems")
 	if call.Err != nil {
 		log.Printf("[tray] SNI watcher call failed: %v", call.Err)
@@ -393,16 +318,41 @@ func readTrayItem(conn *dbus.Conn, id string, bus string, path dbus.ObjectPath) 
 	}
 
 	appID := variantString(props, "Id")
-	iconName, iconSpec := resolveTrayIcon(iconName, appID, bus, title)
+	iconThemePath := variantString(props, "IconThemePath")
+
+	// Electron apps report id as "chrome_status_icon_1"; use tooltip text
+	// as the icon lookup key instead (matches Waybar behaviour).
+	if appID == "chrome_status_icon_1" {
+		if tt := readTooltipTitle(props); tt != "" {
+			appID = strings.ToLower(tt)
+		}
+	}
+
+	iconName, iconSpec := resolveTrayIcon(iconName, appID, bus, title, iconThemePath)
+
+	// If no named icon was resolved, fall back to the raw pixmap provided by
+	// the application (used by most Electron-based apps).
+	var pixmapData []byte
+	var pixmapW, pixmapH int32
+	if iconName == "image-missing" && iconSpec == "" {
+		pixmapData, pixmapW, pixmapH = extractIconPixmap(props)
+		if pixmapData != nil {
+			iconName = ""
+		}
+	}
 
 	return trayItem{
-		ID:       id,
-		Bus:      bus,
-		Path:     path,
-		MenuPath: menuPath,
-		IconName: iconName,
-		IconSpec: iconSpec,
-		Title:    title,
+		ID:            id,
+		Bus:           bus,
+		Path:          path,
+		MenuPath:      menuPath,
+		IconName:      iconName,
+		IconSpec:      iconSpec,
+		IconPixmap:    pixmapData,
+		IconPixmapW:   pixmapW,
+		IconPixmapH:   pixmapH,
+		IconThemePath: iconThemePath,
+		Title:         title,
 	}, true
 }
 
@@ -420,13 +370,20 @@ func newTrayItemWidget(conn *dbus.Conn, item trayItem) gtk.Widgetter {
 	button.AddCSSClass("tray-item")
 
 	icon := gtk.NewImage()
-	if item.IconSpec != "" {
+	switch {
+	case item.IconPixmap != nil:
+		if texture := trayPixmapTexture(item.IconPixmap, item.IconPixmapW, item.IconPixmapH); texture != nil {
+			icon.SetFromPaintable(texture)
+		} else {
+			icon.SetFromIconName("image-missing")
+		}
+	case item.IconSpec != "":
 		if gicon, err := gio.NewIconForString(item.IconSpec); err == nil {
 			icon.SetFromGIcon(gicon)
 		} else {
 			icon.SetFromIconName(item.IconName)
 		}
-	} else {
+	default:
 		icon.SetFromIconName(item.IconName)
 	}
 	icon.SetPixelSize(16)
@@ -747,8 +704,29 @@ func cleanMenuLabel(label string) string {
 	return label
 }
 
-func resolveTrayIcon(iconName string, appID string, bus string, title string) (string, string) {
+func resolveTrayIcon(iconName string, appID string, bus string, title string, iconThemePath string) (string, string) {
 	iconName = strings.TrimSpace(iconName)
+
+	// If a custom icon theme path is provided, check there first before the
+	// system theme. Electron-based apps commonly ship their own icon assets.
+	if iconThemePath != "" && iconName != "" {
+		for _, ext := range []string{".png", ".svg", ".xpm"} {
+			candidate := filepath.Join(iconThemePath, iconName+ext)
+			if _, err := os.Stat(candidate); err == nil {
+				return "", candidate
+			}
+		}
+		// Also try nested paths (e.g. hicolor/NxN/apps/)
+		for _, size := range []string{"22x22", "24x24", "32x32", "48x48", "16x16"} {
+			for _, ext := range []string{".png", ".svg"} {
+				candidate := filepath.Join(iconThemePath, "hicolor", size, "apps", iconName+ext)
+				if _, err := os.Stat(candidate); err == nil {
+					return "", candidate
+				}
+			}
+		}
+	}
+
 	if trayIconExists(iconName) {
 		return iconName, ""
 	}
@@ -761,6 +739,70 @@ func resolveTrayIcon(iconName string, appID string, bus string, title string) (s
 		return iconName, ""
 	}
 	return "image-missing", ""
+}
+
+// extractIconPixmap decodes the "IconPixmap" D-Bus property (type a(iiay),
+// ARGB32) and returns the largest frame converted to RGBA, or nil on failure.
+func extractIconPixmap(props map[string]dbus.Variant) ([]byte, int32, int32) {
+	v, ok := props["IconPixmap"]
+	if !ok {
+		return nil, 0, 0
+	}
+	return decodeIconPixmapVariant(v.Value())
+}
+
+func decodeIconPixmapVariant(raw interface{}) ([]byte, int32, int32) {
+	frames, ok := raw.([]interface{})
+	if !ok {
+		return nil, 0, 0
+	}
+
+	var bestData []byte
+	var bestW, bestH int32
+
+	for _, frameRaw := range frames {
+		frame, ok := frameRaw.([]interface{})
+		if !ok || len(frame) < 3 {
+			continue
+		}
+		w, ok1 := variantInt32(frame[0])
+		h, ok2 := variantInt32(frame[1])
+		data, ok3 := frame[2].([]byte)
+		if !ok1 || !ok2 || !ok3 {
+			continue
+		}
+		if w <= 0 || h <= 0 || int(w)*int(h)*4 != len(data) {
+			continue
+		}
+		// Pick the largest image.
+		if w*h > bestW*bestH {
+			bestW, bestH = w, h
+			bestData = argbToRGBA(data)
+		}
+	}
+	return bestData, bestW, bestH
+}
+
+// argbToRGBA converts a byte slice from ARGB order (as sent by SNI) to RGBA.
+func argbToRGBA(src []byte) []byte {
+	dst := make([]byte, len(src))
+	for i := 0; i+3 < len(src); i += 4 {
+		a := src[i]
+		dst[i] = src[i+1]   // R
+		dst[i+1] = src[i+2] // G
+		dst[i+2] = src[i+3] // B
+		dst[i+3] = a        // A
+	}
+	return dst
+}
+
+// trayPixmapTexture creates a GDK MemoryTexture from RGBA pixel data.
+func trayPixmapTexture(data []byte, width, height int32) *gdk.MemoryTexture {
+	if len(data) != int(width)*int(height)*4 {
+		return nil
+	}
+	bytes := glib.NewBytes(data)
+	return gdk.NewMemoryTexture(int(width), int(height), gdk.MemoryR8G8B8A8, bytes, uint(width*4))
 }
 
 func trayIconExists(iconName string) bool {

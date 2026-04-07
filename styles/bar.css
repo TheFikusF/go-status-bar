@@ -558,6 +558,7 @@ button:hover {
 #audio-menu,
 #workspace-popup,
 #wallpaper-menu,
+#clipboard-menu,
 #tray-item-menu,
 #power-menu,
 #wifi-menu {
@@ -578,6 +579,7 @@ button:hover {
 #world-clock-menu-title,
 #weather-menu-title,
 #wallpaper-menu-title,
+#clipboard-menu-title,
 #audio-menu-title,
 #wifi-menu-title {
   font-size: 15px;

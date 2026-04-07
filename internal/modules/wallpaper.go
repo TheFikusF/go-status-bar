@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -11,9 +12,18 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
-const (
-	WALLPAPERS_DIR = "$HOME/Pictures/wp"
-)
+// wallpapersDir returns the wallpapers directory, honouring the
+// STATUSBAR_WALLPAPERS_DIR environment variable as an override.
+func wallpapersDir() string {
+	if dir := os.Getenv("STATUSBAR_WALLPAPERS_DIR"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	return filepath.Join(home, "Pictures", "wp")
+}
 
 // setWallpaper sets the wallpaper to the given path using hyprpaper logic
 func setWallpaper(path string) error {
@@ -67,12 +77,8 @@ func NewWallpaper() gtk.Widgetter {
 		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
 			listBox.Remove(child)
 		}
-		// List wallpapers (example: from ~/Pictures/Wallpapers)
-		wallpapersDir := os.Getenv("STATUSBAR_WALLPAPERS_DIR")
-		if wallpapersDir == "" {
-			wallpapersDir = os.ExpandEnv(WALLPAPERS_DIR)
-		}
-		files, err := os.ReadDir(wallpapersDir)
+		dir := wallpapersDir()
+		files, err := os.ReadDir(dir)
 		if err != nil {
 			label := gtk.NewLabel("No wallpapers found")
 			label.AddCSSClass("wallpaper-choice")
@@ -88,7 +94,7 @@ func NewWallpaper() gtk.Widgetter {
 			row.AddCSSClass("wallpaper-choice-row")
 
 			// Preview icon
-			img := gtk.NewImageFromFile(filepath.Join(wallpapersDir, name))
+			img := gtk.NewImageFromFile(filepath.Join(dir, name))
 			img.SetPixelSize(48)
 			img.SetVAlign(gtk.AlignCenter)
 			row.Append(img)
@@ -104,7 +110,7 @@ func NewWallpaper() gtk.Widgetter {
 			click := gtk.NewGestureClick()
 			click.ConnectPressed(func(_ int, _, _ float64) {
 				go func(name string) {
-					path := filepath.Join(wallpapersDir, name)
+					path := filepath.Join(dir, name)
 					err := setWallpaper(path)
 					ui(func() {
 						if err != nil {
@@ -146,40 +152,26 @@ func NewWallpaper() gtk.Widgetter {
 }
 
 func shuffleWallpaper() (string, error) {
-	files, err := listWallpaperFiles(WALLPAPERS_DIR)
+	dir := wallpapersDir()
+	files, err := listWallpaperFiles(dir)
 	if err != nil {
 		return "", err
 	}
 	if len(files) == 0 {
-		return "", fmt.Errorf("wallpaper: no images in %s", WALLPAPERS_DIR)
+		return "", fmt.Errorf("wallpaper: no images in %s", dir)
 	}
 
-	wallpaper := files[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(files))]
-	if err := ensureHyprpaper(); err != nil {
+	wallpaper := files[rand.Intn(len(files))]
+	if err := setWallpaper(wallpaper); err != nil {
 		return "", err
 	}
-
-	_, _ = runCommand("hyprctl", "hyprpaper", "preload", wallpaper)
-
-	command := ", " + wallpaper + ", cover"
-	var applyErr error
-	for range 3 {
-		if _, applyErr = runCommand("hyprctl", "hyprpaper", "wallpaper", command); applyErr == nil {
-			return wallpaper, nil
-		}
-		time.Sleep(350 * time.Millisecond)
-	}
-
-	if _, fallbackErr := runCommand("hyprctl", "hyprpaper", "wallpaper", ", "+wallpaper); fallbackErr == nil {
-		return wallpaper, nil
-	}
-
-	return "", fmt.Errorf("wallpaper: failed to apply %s", filepath.Base(wallpaper))
+	return wallpaper, nil
 }
 
 func listWallpaperFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		log.Println(err)
 		return nil, fmt.Errorf("wallpaper: cannot read %s", dir)
 	}
 

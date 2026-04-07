@@ -65,6 +65,15 @@ func runCommand(name string, args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
+func runCommandStdin(stdin []byte, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = bytes.NewReader(stdin)
+	return cmd.Run()
+}
+
 func runDetached(name string, args ...string) {
 	go func() {
 		cmd := exec.Command(name, args...)
