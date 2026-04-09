@@ -50,7 +50,8 @@ func NewWallpaper() gtk.Widgetter {
 	button.SetHasFrame(false)
 	button.SetName("custom-wallpaper")
 	button.SetTooltipText("Shuffle wallpaper")
-
+	// Track the active wallpaper filename; seed from hyprpaper on startup.
+	currentWallpaper := filepath.Base(readCurrentWallpaper())
 	// Create popover for wallpaper selection
 
 	popover := gtk.NewPopover()
@@ -90,25 +91,31 @@ func NewWallpaper() gtk.Widgetter {
 				continue
 			}
 			name := file.Name()
-			row := gtk.NewBox(gtk.OrientationHorizontal, 8)
+
+			row := gtk.NewButton()
+			row.SetHasFrame(false)
 			row.AddCSSClass("wallpaper-choice-row")
+			if name == currentWallpaper {
+				row.AddCSSClass("active")
+			}
+
+			inner := gtk.NewBox(gtk.OrientationHorizontal, 8)
 
 			// Preview icon
 			img := gtk.NewImageFromFile(filepath.Join(dir, name))
 			img.SetPixelSize(48)
 			img.SetVAlign(gtk.AlignCenter)
-			row.Append(img)
+			inner.Append(img)
 
 			// Label
 			label := gtk.NewLabel(name)
 			label.SetHAlign(gtk.AlignStart)
 			label.SetTooltipText(name)
 			label.AddCSSClass("wallpaper-choice-label")
-			row.Append(label)
+			inner.Append(label)
 
-			// Click to set wallpaper using GestureClick
-			click := gtk.NewGestureClick()
-			click.ConnectPressed(func(_ int, _, _ float64) {
+			row.SetChild(inner)
+			row.ConnectClicked(func() {
 				go func(name string) {
 					path := filepath.Join(dir, name)
 					err := setWallpaper(path)
@@ -116,13 +123,13 @@ func NewWallpaper() gtk.Widgetter {
 						if err != nil {
 							button.SetTooltipText("Failed: " + err.Error())
 						} else {
+							currentWallpaper = name
 							button.SetTooltipText("Wallpaper: " + name)
 						}
 						popover.Popdown()
 					})
 				}(name)
 			})
-			row.AddController(click)
 			listBox.Append(row)
 		}
 	}
@@ -143,7 +150,8 @@ func NewWallpaper() gtk.Widgetter {
 					return
 				}
 
-				button.SetTooltipText("Wallpaper: " + filepath.Base(wallpaper))
+				currentWallpaper = filepath.Base(wallpaper)
+				button.SetTooltipText("Wallpaper: " + currentWallpaper)
 			})
 		}()
 	})
@@ -188,6 +196,19 @@ func listWallpaperFiles(dir string) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+func readCurrentWallpaper() string {
+	out, err := runCommand("hyprctl", "hyprpaper", "listactive")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if idx := strings.Index(line, " = "); idx >= 0 {
+			return strings.TrimSpace(line[idx+3:])
+		}
+	}
+	return ""
 }
 
 func ensureHyprpaper() error {

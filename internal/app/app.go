@@ -43,7 +43,8 @@ func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow
 	window.SetChild(root)
 
 	for _, widget := range []gtk.Widgetter{
-		modules.NewWorkspaces(),
+		// modules.NewWorkspaces(),
+		modules.NewFocusedApp(window),
 		modules.NewMusic(),
 		modules.NewMode(),
 		modules.NewScratchpad(),

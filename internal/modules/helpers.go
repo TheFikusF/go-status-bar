@@ -101,7 +101,7 @@ func attachClick(widget gtk.Widgetter, left, right func()) {
 	widget.(interface{ AddController(gtk.EventControllerer) }).AddController(click)
 }
 
-func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick func(), beforeOpen func()) {
+func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick func(), beforeOpen func()) (func(), func(bool)) {
 	popover.SetAutohide(false)
 	popover.SetCascadePopdown(false)
 	anchorWidget := gtk.BaseWidget(anchor)
@@ -113,6 +113,7 @@ func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick f
 	var overAnchor bool
 	var overPopup bool
 	var interacting bool
+	var keyHeld bool
 	var closeToken int
 	var visible bool
 
@@ -145,7 +146,7 @@ func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick f
 	}
 
 	closeIfNeeded := func() {
-		if overAnchor || overPopup || interacting {
+		if overAnchor || overPopup || interacting || keyHeld {
 			return
 		}
 		if visible {
@@ -230,6 +231,16 @@ func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick f
 		}
 	})
 	anchor.(interface{ AddController(gtk.EventControllerer) }).AddController(click)
+
+	setHeld := func(held bool) {
+		keyHeld = held
+		if held {
+			open()
+		} else {
+			scheduleClose(0)
+		}
+	}
+	return open, setHeld
 }
 
 func attachScroll(widget gtk.Widgetter, onUp, onDown func()) {

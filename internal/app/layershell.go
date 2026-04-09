@@ -18,9 +18,11 @@ static void statusbar_init_layer_shell(GtkWindow* win) {
 */
 import "C"
 
-import "unsafe"
+import (
+	"unsafe"
 
-import "github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+)
 
 func initLayerShell(window *gtk.ApplicationWindow) {
 	C.statusbar_init_layer_shell((*C.GtkWindow)(unsafe.Pointer(window.Native())))

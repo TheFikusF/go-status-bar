@@ -38,3 +38,7 @@ go build .
 - This version targets Linux desktops with GTK4 and `gtk4-layer-shell` installed.
 - The battery module falls back to `AC` on systems without a battery.
 - Modules are intentionally simple so you can swap them out for workspace, media, network, or WM-specific integrations.
+
+## Hyprland configuration
+
+The **focused-app module** will show active workspaces if you hold WIN key.

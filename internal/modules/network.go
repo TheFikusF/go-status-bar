@@ -102,12 +102,18 @@ func NewNetwork() gtk.Widgetter {
 					listBox.Append(row)
 				default:
 					for _, network := range snapshot.Networks {
-						row := gtk.NewLabel(formatWifiNetwork(network))
+						network := network
+						row := gtk.NewButtonWithLabel(formatWifiNetwork(network))
+						row.SetHasFrame(false)
+						row.SetHAlign(gtk.AlignStart)
 						row.AddCSSClass("wifi-network-row")
-						row.SetXAlign(0)
 						if network.Active {
 							row.AddCSSClass("active")
 						}
+						row.ConnectClicked(func() {
+							popover.Popdown()
+							runDetached("nmcli", "device", "wifi", "connect", network.SSID)
+						})
 						listBox.Append(row)
 					}
 				}
