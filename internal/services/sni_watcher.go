@@ -68,9 +68,9 @@ func (w *WatcherExport) RegisterStatusNotifierHost(sender dbus.Sender, service s
 
 // --- org.freedesktop.DBus.Properties ---
 
-func (w *WatcherExport) Get(interfaceName, property string) (interface{}, *dbus.Error) {
+func (w *WatcherExport) Get(interfaceName, property string) (dbus.Variant, *dbus.Error) {
 	if interfaceName != "org.kde.StatusNotifierWatcher" {
-		return nil, nil
+		return dbus.Variant{}, nil
 	}
 	switch property {
 	case "RegisteredStatusNotifierItems":
@@ -78,13 +78,13 @@ func (w *WatcherExport) Get(interfaceName, property string) (interface{}, *dbus.
 		for _, e := range w.Watcher.Items {
 			items = append(items, e.BusName+e.ObjectPath)
 		}
-		return items, nil
+		return dbus.MakeVariant(items), nil
 	case "IsStatusNotifierHostRegistered":
-		return len(w.Watcher.Hosts) > 0, nil
+		return dbus.MakeVariant(len(w.Watcher.Hosts) > 0), nil
 	case "ProtocolVersion":
-		return int32(0), nil
+		return dbus.MakeVariant(int32(0)), nil
 	}
-	return nil, nil
+	return dbus.Variant{}, nil
 }
 
 func (w *WatcherExport) GetAll(interfaceName string) (map[string]dbus.Variant, *dbus.Error) {
