@@ -3,9 +3,10 @@ package modules
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"time"
+
+	"statusbar/internal/config"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
@@ -27,7 +28,7 @@ type weatherSnapshot struct {
 	Forecast    []string
 }
 
-func NewWeather() gtk.Widgetter {
+func NewWeather(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("custom-weather")
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
@@ -63,7 +64,7 @@ func NewWeather() gtk.Widgetter {
 
 	go func() {
 		for range refreshRequests {
-			snapshot := readWeatherSnapshot()
+			snapshot := readWeatherSnapshot(cfg.WeatherLat, cfg.WeatherLon)
 			ui(func() {
 				setTextModule(module, snapshot.CurrentText)
 				for i := range forecastRows {
@@ -87,11 +88,11 @@ func NewWeather() gtk.Widgetter {
 	return module.Box
 }
 
-func readWeatherSnapshot() weatherSnapshot {
-	lat := os.Getenv("STATUSBAR_LAT")
-	lon := os.Getenv("STATUSBAR_LON")
-	if lat == "" || lon == "" {
+func readWeatherSnapshot(lat, lon string) weatherSnapshot {
+	if lat == "" {
 		lat = "50.0755"
+	}
+	if lon == "" {
 		lon = "14.4378"
 	}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"statusbar/internal/config"
 	"statusbar/internal/modules"
 )
 
@@ -15,6 +16,7 @@ const userCSSRelativePath = ".config/status-bar/style.css"
 
 func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow {
 	loadCSS(defaultCSS)
+	cfg := config.Load()
 
 	window := gtk.NewApplicationWindow(application)
 	window.SetTitle("Status Bar")
@@ -42,45 +44,39 @@ func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow
 	root.SetEndWidget(right)
 	window.SetChild(root)
 
-	for _, widget := range []gtk.Widgetter{
-		// modules.NewWorkspaces(),
-		modules.NewFocusedApp(window),
-		modules.NewMusic(),
-		modules.NewMode(),
-		modules.NewScratchpad(),
-		// modules.NewMedia(),
-	} {
-		left.Append(widget)
+	appendIf := func(box *gtk.Box, enabled bool, w gtk.Widgetter) {
+		if enabled {
+			box.Append(w)
+		}
 	}
 
-	for _, widget := range []gtk.Widgetter{
-		modules.NewDateClock(),
-		modules.NewTimeClock(),
-		modules.NewNotification(),
-	} {
-		center.Append(widget)
-	}
+	appendIf(left, cfg.Modules.Workspaces, modules.NewWorkspaces())
+	appendIf(left, cfg.Modules.FocusedApp, modules.NewFocusedApp(window))
+	appendIf(left, cfg.Modules.Music, modules.NewMusic())
+	appendIf(left, cfg.Modules.Mode, modules.NewMode())
+	appendIf(left, cfg.Modules.Scratchpad, modules.NewScratchpad())
 
-	for _, widget := range []gtk.Widgetter{
-		modules.NewMPD(),
-		modules.NewWallpaper(),
-		modules.NewClipboard(),
-		modules.NewWeather(),
-		modules.NewPipewire(),
-		modules.NewNetwork(),
-		// modules.NewPowerProfile(),
-		modules.NewCPU(),
-		modules.NewMemory(),
-		modules.NewTemperature(),
-		// modules.NewKeyboardState(),
-		modules.NewLanguage(),
-		modules.NewBattery("BAT0", "battery"),
-		// modules.NewBattery("BAT1", "battery-bat2"),
-		modules.NewTray(),
-		modules.NewPower(),
-	} {
-		right.Append(widget)
+	appendIf(center, cfg.Modules.DateClock, modules.NewDateClock())
+	appendIf(center, cfg.Modules.TimeClock, modules.NewTimeClock(cfg))
+	appendIf(center, cfg.Modules.Notification, modules.NewNotification())
+
+	appendIf(right, cfg.Modules.MPD, modules.NewMPD())
+	appendIf(right, cfg.Modules.Wallpaper, modules.NewWallpaper(cfg))
+	appendIf(right, cfg.Modules.Clipboard, modules.NewClipboard())
+	appendIf(right, cfg.Modules.Weather, modules.NewWeather(cfg))
+	appendIf(right, cfg.Modules.Pipewire, modules.NewPipewire())
+	appendIf(right, cfg.Modules.Network, modules.NewNetwork())
+	appendIf(right, cfg.Modules.PowerProfile, modules.NewPowerProfile())
+	appendIf(right, cfg.Modules.CPU, modules.NewCPU())
+	appendIf(right, cfg.Modules.Memory, modules.NewMemory())
+	appendIf(right, cfg.Modules.Temperature, modules.NewTemperature())
+	appendIf(right, cfg.Modules.KeyboardState, modules.NewKeyboardState())
+	appendIf(right, cfg.Modules.Language, modules.NewLanguage(cfg))
+	if cfg.Modules.Battery {
+		right.Append(modules.NewBattery("BAT0", "battery"))
 	}
+	appendIf(right, cfg.Modules.Tray, modules.NewTray())
+	appendIf(right, cfg.Modules.Power, modules.NewPower())
 
 	return window
 }

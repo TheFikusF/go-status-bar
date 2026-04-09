@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"statusbar/internal/config"
+
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -44,7 +46,7 @@ func lockIcon(state string) string {
 	return ""
 }
 
-func NewLanguage() gtk.Widgetter {
+func NewLanguage(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("language")
 	module.Box.SetHExpand(false)
 	module.Label.SetHExpand(true)
@@ -54,6 +56,19 @@ func NewLanguage() gtk.Widgetter {
 	attachClick(module.Box, func() {
 		runDetached("hyprctl", "switchxkblayout", keyboardName, "next")
 	}, nil)
+
+	fmtLayout := func(layout string) string {
+		if len(cfg.Languages) > 0 {
+			lower := strings.ToLower(strings.TrimSpace(layout))
+			for _, entry := range cfg.Languages {
+				if strings.Contains(lower, strings.ToLower(entry.Match)) {
+					return entry.Label
+				}
+			}
+			return strings.ToUpper(firstN(lower, 3))
+		}
+		return formatLanguage(layout)
+	}
 
 	refresh := func() {
 		output, err := runCommand("hyprctl", "devices", "-j")
@@ -78,7 +93,7 @@ func NewLanguage() gtk.Widgetter {
 			}
 		}
 
-		ui(func() { setTextModule(module, formatLanguage(layout)) })
+		ui(func() { setTextModule(module, fmtLayout(layout)) })
 	}
 
 	refresh()
@@ -86,7 +101,7 @@ func NewLanguage() gtk.Widgetter {
 		for event := range subscribeHyprEvents() {
 			if event.Name == "activelayout" {
 				if _, layout, ok := strings.Cut(event.Data, ","); ok {
-					ui(func() { setTextModule(module, formatLanguage(layout)) })
+					ui(func() { setTextModule(module, fmtLayout(layout)) })
 					continue
 				}
 				refresh()

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"statusbar/internal/config"
+
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -45,14 +47,14 @@ func setWallpaper(path string) error {
 	return fmt.Errorf("wallpaper: failed to apply %s", filepath.Base(path))
 }
 
-func NewWallpaper() gtk.Widgetter {
+func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 	button := gtk.NewButtonWithLabel("")
 	button.SetHasFrame(false)
 	button.SetName("custom-wallpaper")
 	button.SetTooltipText("Shuffle wallpaper")
 	// Track the active wallpaper filename; seed from hyprpaper on startup.
 	currentWallpaper := filepath.Base(readCurrentWallpaper())
-	// Create popover for wallpaper selection
+	wpDir := cfg.WallpapersDir
 
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
@@ -78,7 +80,7 @@ func NewWallpaper() gtk.Widgetter {
 		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
 			listBox.Remove(child)
 		}
-		dir := wallpapersDir()
+		dir := wpDir
 		files, err := os.ReadDir(dir)
 		if err != nil {
 			label := gtk.NewLabel("No wallpapers found")
@@ -117,7 +119,7 @@ func NewWallpaper() gtk.Widgetter {
 			row.SetChild(inner)
 			row.ConnectClicked(func() {
 				go func(name string) {
-					path := filepath.Join(dir, name)
+					path := filepath.Join(wpDir, name)
 					err := setWallpaper(path)
 					ui(func() {
 						if err != nil {

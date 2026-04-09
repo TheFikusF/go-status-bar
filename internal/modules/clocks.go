@@ -2,9 +2,9 @@ package modules
 
 import (
 	"fmt"
-	"os"
-	"strings"
 	"time"
+
+	"statusbar/internal/config"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
@@ -160,7 +160,7 @@ func NewDateClock() gtk.Widgetter {
 	return module.Box
 }
 
-func NewTimeClock() gtk.Widgetter {
+func NewTimeClock(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("clock-time")
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
@@ -177,7 +177,7 @@ func NewTimeClock() gtk.Widgetter {
 	title.SetXAlign(0)
 	menu.Append(title)
 
-	clocks := readWorldClocks()
+	clocks := cfg.WorldClocks
 	rows := make([]*gtk.Label, 0, len(clocks))
 	for range clocks {
 		row := gtk.NewLabel("")
@@ -211,51 +211,4 @@ func NewTimeClock() gtk.Widgetter {
 		})
 	})
 	return module.Box
-}
-
-func readWorldClocks() []struct {
-	Name string
-	Zone string
-} {
-	value := strings.TrimSpace(os.Getenv("STATUSBAR_WORLD_CLOCKS"))
-	if value == "" {
-		value = "Prague=Europe/Prague,New York=America/New_York,Tel Aviv=Asia/Tel_Aviv,Kyiv=Europe/Kyiv,San Francisco=America/Los_Angeles,MAUI=Pacific/Honolulu"
-	}
-
-	entries := strings.Split(value, ",")
-	clocks := make([]struct {
-		Name string
-		Zone string
-	}, 0, len(entries))
-
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		name, zone, ok := strings.Cut(entry, "=")
-		if !ok {
-			zone = name
-		}
-		name = strings.TrimSpace(name)
-		zone = strings.TrimSpace(zone)
-		if name == "" || zone == "" {
-			continue
-		}
-		clocks = append(clocks, struct {
-			Name string
-			Zone string
-		}{Name: name, Zone: zone})
-	}
-
-	if len(clocks) == 0 {
-		return []struct {
-			Name string
-			Zone string
-		}{
-			{Name: "Prague", Zone: "Europe/Prague"},
-		}
-	}
-
-	return clocks
 }
