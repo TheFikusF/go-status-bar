@@ -1,7 +1,9 @@
 package services
 
 import (
+	"encoding/xml"
 	"log"
+	"path"
 	"strings"
 
 	"github.com/godbus/dbus/v5"
@@ -23,38 +25,76 @@ type WatcherExport struct {
 	Watcher *StatusNotifierWatcher
 }
 
+const (
+	defaultStatusNotifierItemPath = "/StatusNotifierItem"
+	watcherObjectPath             = dbus.ObjectPath("/StatusNotifierWatcher")
+	maxIntrospectionNodes         = 128
+)
+
 func sniKey(busName, objectPath string) string {
 	return busName + "|" + objectPath
 }
 
-// parseSNIService resolves the (busName, objectPath) from a RegisterStatusNotifier*
-// service string.  Electron/Chromium apps send just an object path (starting with
-// '/'); in that case the D-Bus sender's unique name is used as the bus name.  All
-// other apps send a well-known bus name; the default path is "/StatusNotifierItem".
-func parseSNIService(sender dbus.Sender, service string) (string, string) {
-	if len(service) > 0 && service[0] == '/' {
-		return string(sender), service
+func isStatusNotifierHostRegistered() bool {
+	// Mature SNI watchers report that a host is present as soon as the watcher
+	// appears, which is what Chromium/Electron expects before it exposes tray
+	// icons. Relying on a later RegisterStatusNotifierHost call creates a race.
+	return true
+}
+
+// parseSNIItemService resolves the unique bus name and object path from a
+// RegisterStatusNotifierItem payload. Electron/Chromium can send either an
+// object path (using the sender's unique name) or a well-known service name.
+func parseSNIItemService(conn *dbus.Conn, sender dbus.Sender, service string) (string, string, error) {
+	if strings.HasPrefix(service, "/") {
+		return string(sender), service, nil
 	}
-	return service, "/StatusNotifierItem"
+
+	if strings.HasPrefix(service, ":") {
+		return service, defaultStatusNotifierItemPath, nil
+	}
+
+	busName, err := resolveUniqueBusName(conn, service)
+	if err != nil {
+		return "", "", err
+	}
+	return busName, defaultStatusNotifierItemPath, nil
+}
+
+func resolveUniqueBusName(conn *dbus.Conn, service string) (string, error) {
+	if conn == nil {
+		return "", dbus.ErrClosed
+	}
+
+	var owner string
+	err := conn.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, service).Store(&owner)
+	if err != nil {
+		return "", err
+	}
+	return owner, nil
 }
 
 // --- org.kde.StatusNotifierWatcher methods ---
 
 func (w *WatcherExport) RegisterStatusNotifierItem(sender dbus.Sender, service string) *dbus.Error {
-	busName, objectPath := parseSNIService(sender, service)
-	key := sniKey(busName, objectPath)
-	if _, exists := w.Watcher.Items[key]; exists {
+	busName, objectPath, err := parseSNIItemService(w.Watcher.Conn, sender, service)
+	if err != nil {
+		log.Printf("tray/watcher: failed to resolve item %q from %s: %v", service, sender, err)
 		return nil
 	}
-	w.Watcher.Items[key] = SNIEntry{busName, objectPath}
+	if !w.Watcher.registerItem(busName, objectPath) {
+		return nil
+	}
 	w.Watcher.emitPropertiesChanged()
-	w.Watcher.emitSignal("StatusNotifierItemRegistered", busName+objectPath)
-	log.Printf("tray/watcher: registered item %s%s", busName, objectPath)
 	return nil
 }
 
 func (w *WatcherExport) RegisterStatusNotifierHost(sender dbus.Sender, service string) *dbus.Error {
-	busName, objectPath := parseSNIService(sender, service)
+	busName := string(sender)
+	objectPath := service
+	if !strings.HasPrefix(objectPath, "/") {
+		objectPath = "/StatusNotifierHost"
+	}
 	key := sniKey(busName, objectPath)
 	if _, exists := w.Watcher.Hosts[key]; exists {
 		return nil
@@ -80,7 +120,7 @@ func (w *WatcherExport) Get(interfaceName, property string) (dbus.Variant, *dbus
 		}
 		return dbus.MakeVariant(items), nil
 	case "IsStatusNotifierHostRegistered":
-		return dbus.MakeVariant(len(w.Watcher.Hosts) > 0), nil
+		return dbus.MakeVariant(isStatusNotifierHostRegistered()), nil
 	case "ProtocolVersion":
 		return dbus.MakeVariant(int32(0)), nil
 	}
@@ -97,7 +137,7 @@ func (w *WatcherExport) GetAll(interfaceName string) (map[string]dbus.Variant, *
 	}
 	return map[string]dbus.Variant{
 		"RegisteredStatusNotifierItems":  dbus.MakeVariant(items),
-		"IsStatusNotifierHostRegistered": dbus.MakeVariant(len(w.Watcher.Hosts) > 0),
+		"IsStatusNotifierHostRegistered": dbus.MakeVariant(isStatusNotifierHostRegistered()),
 		"ProtocolVersion":                dbus.MakeVariant(int32(0)),
 	}, nil
 }
@@ -138,10 +178,196 @@ func (w *StatusNotifierWatcher) emitPropertiesChanged() {
 		"org.kde.StatusNotifierWatcher",
 		map[string]dbus.Variant{
 			"RegisteredStatusNotifierItems":  dbus.MakeVariant(items),
-			"IsStatusNotifierHostRegistered": dbus.MakeVariant(len(w.Hosts) > 0),
+			"IsStatusNotifierHostRegistered": dbus.MakeVariant(isStatusNotifierHostRegistered()),
 		},
 		[]string{},
 	)
+}
+
+func (w *StatusNotifierWatcher) registerItem(busName, objectPath string) bool {
+	if w == nil || w.Conn == nil {
+		return false
+	}
+
+	pathValue := dbus.ObjectPath(objectPath)
+	if busName == "" || !pathValue.IsValid() {
+		return false
+	}
+	if !hasStatusNotifierItemInterface(w.Conn.Object(busName, pathValue)) {
+		log.Printf("tray/watcher: ignoring item %s%s without SNI interface", busName, objectPath)
+		return false
+	}
+
+	key := sniKey(busName, objectPath)
+	if _, exists := w.Items[key]; exists {
+		return false
+	}
+
+	w.Items[key] = SNIEntry{busName, objectPath}
+	w.emitSignal("StatusNotifierItemRegistered", busName+objectPath)
+	log.Printf("tray/watcher: registered item %s%s", busName, objectPath)
+	return true
+}
+
+func (w *StatusNotifierWatcher) discoverExistingItems() {
+	if w == nil || w.Conn == nil {
+		return
+	}
+
+	var names []string
+	if err := w.Conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&names); err != nil {
+		log.Printf("tray/watcher: could not list bus names for discovery: %v", err)
+		return
+	}
+
+	changed := false
+	for _, name := range names {
+		if !strings.HasPrefix(name, ":") {
+			continue
+		}
+		if w.discoverBusName(name) {
+			changed = true
+		}
+	}
+	if changed {
+		w.emitPropertiesChanged()
+	}
+}
+
+func (w *StatusNotifierWatcher) discoverBusName(busName string) bool {
+	if w == nil || w.Conn == nil || !strings.HasPrefix(busName, ":") {
+		return false
+	}
+
+	paths := discoverStatusNotifierItemPaths(w.Conn, busName)
+	changed := false
+	for _, objectPath := range paths {
+		if w.registerItem(busName, string(objectPath)) {
+			changed = true
+		}
+	}
+	if changed {
+		w.emitPropertiesChanged()
+	}
+	return changed
+}
+
+func discoverStatusNotifierItemPaths(conn *dbus.Conn, busName string) []dbus.ObjectPath {
+	if conn == nil || busName == "" {
+		return nil
+	}
+
+	seen := map[dbus.ObjectPath]struct{}{}
+	paths := make([]dbus.ObjectPath, 0, 2)
+	addPath := func(candidate dbus.ObjectPath) bool {
+		if !candidate.IsValid() {
+			return false
+		}
+		if _, exists := seen[candidate]; exists {
+			return true
+		}
+		seen[candidate] = struct{}{}
+		if hasStatusNotifierItemInterface(conn.Object(busName, candidate)) {
+			paths = append(paths, candidate)
+			return true
+		}
+		return false
+	}
+
+	for _, candidate := range []dbus.ObjectPath{
+		defaultStatusNotifierItemPath,
+		"/org/ayatana/NotificationItem",
+	} {
+		addPath(candidate)
+	}
+	if len(paths) > 0 {
+		return paths
+	}
+
+	queue := []dbus.ObjectPath{"/"}
+	visited := map[dbus.ObjectPath]struct{}{"/": {}}
+	visitedCount := 0
+
+	for len(queue) > 0 && visitedCount < maxIntrospectionNodes {
+		current := queue[0]
+		queue = queue[1:]
+		visitedCount++
+
+		node, err := introspectNode(conn, busName, current)
+		if err != nil {
+			continue
+		}
+		if nodeHasStatusNotifierItemInterface(node) && addPath(current) {
+			continue
+		}
+
+		for _, child := range node.Children {
+			childPath := childObjectPath(current, child.Name)
+			if !childPath.IsValid() {
+				continue
+			}
+			if _, exists := visited[childPath]; exists {
+				continue
+			}
+			visited[childPath] = struct{}{}
+			queue = append(queue, childPath)
+		}
+	}
+
+	return paths
+}
+
+func introspectNode(conn *dbus.Conn, busName string, objectPath dbus.ObjectPath) (introspect.Node, error) {
+	var xmlData string
+	err := conn.Object(busName, objectPath).Call("org.freedesktop.DBus.Introspectable.Introspect", 0).Store(&xmlData)
+	if err != nil {
+		return introspect.Node{}, err
+	}
+
+	var node introspect.Node
+	if err := xml.Unmarshal([]byte(xmlData), &node); err != nil {
+		return introspect.Node{}, err
+	}
+	return node, nil
+}
+
+func nodeHasStatusNotifierItemInterface(node introspect.Node) bool {
+	for _, iface := range node.Interfaces {
+		switch iface.Name {
+		case "org.kde.StatusNotifierItem", "org.ayatana.NotificationItem":
+			return true
+		}
+	}
+	return false
+}
+
+func childObjectPath(parent dbus.ObjectPath, childName string) dbus.ObjectPath {
+	childName = strings.TrimSpace(childName)
+	if childName == "" {
+		return ""
+	}
+	if strings.HasPrefix(childName, "/") {
+		pathValue := dbus.ObjectPath(childName)
+		if pathValue.IsValid() {
+			return pathValue
+		}
+		return ""
+	}
+
+	base := string(parent)
+	if base == "" {
+		base = "/"
+	}
+	joined := path.Join(base, childName)
+	if !strings.HasPrefix(joined, "/") {
+		joined = "/" + joined
+	}
+
+	pathValue := dbus.ObjectPath(joined)
+	if !pathValue.IsValid() {
+		return ""
+	}
+	return pathValue
 }
 
 // removeBusName removes all items and hosts owned by uniqueName and emits the
@@ -207,12 +433,10 @@ var sniWatcherNode = &introspect.Node{
 // silently.  This function blocks until the connection is lost, so call it in a
 // goroutine.
 //
-// preRegisteredHostName, if non-empty, is added to the hosts map BEFORE the
-// watcher name is claimed.  This ensures IsStatusNotifierHostRegistered is true
-// from the very first moment the watcher is visible on the bus.  Electron apps
-// subscribe to NameOwnerChanged for org.kde.StatusNotifierWatcher and check
-// IsStatusNotifierHostRegistered immediately; without pre-registration they see
-// false and permanently fall back to XEmbed.
+// preRegisteredHostName is kept for API compatibility with the tray host, but
+// the watcher now advertises the host as available immediately in the same way
+// mature SNI watchers do. That avoids Electron/Chromium deciding too early
+// that no tray host exists.
 func MaybeStartEmbeddedWatcher(preRegisteredHostName string) {
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
@@ -261,6 +485,8 @@ func MaybeStartEmbeddedWatcher(preRegisteredHostName string) {
 	conn.Signal(signals)
 
 	log.Printf("tray/watcher: started (org.kde.StatusNotifierWatcher)")
+	watcher.emitHostSignal("StatusNotifierHostRegistered")
+	watcher.discoverExistingItems()
 
 	for sig := range signals {
 		if sig == nil || sig.Name != "org.freedesktop.DBus.NameOwnerChanged" || len(sig.Body) < 3 {
@@ -268,9 +494,13 @@ func MaybeStartEmbeddedWatcher(preRegisteredHostName string) {
 		}
 		name, _ := sig.Body[0].(string)
 		newOwner, _ := sig.Body[2].(string)
-		// Only care about unique names (":1.xxx") losing their owner.
-		if newOwner == "" && strings.HasPrefix(name, ":") {
+		switch {
+		case newOwner == "" && strings.HasPrefix(name, ":"):
 			watcher.removeBusName(name)
+		case newOwner != "" && strings.HasPrefix(name, ":"):
+			watcher.discoverBusName(name)
+		case newOwner != "" && (strings.HasPrefix(name, "org.kde.StatusNotifierItem") || strings.HasPrefix(name, "org.ayatana.NotificationItem")):
+			watcher.discoverBusName(newOwner)
 		}
 	}
 }

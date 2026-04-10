@@ -43,6 +43,14 @@ type dbusMenuNode struct {
 	Children        []dbusMenuNode
 }
 
+type trayReadState int
+
+const (
+	trayReadHidden trayReadState = iota
+	trayReadReady
+	trayReadRetry
+)
+
 func NewTray() gtk.Widgetter {
 	container := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	container.SetName("tray")
@@ -94,26 +102,14 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 		log.Printf("tray: host register failed: %v", err)
 	}
 
-	var lastItemsKey string
-	refresh := func() {
-		log.Printf("tray: refreshing tray items...")
-		items := readTrayItems(conn, watcher)
-		log.Printf("tray: found %d tray items", len(items))
-		key := trayItemsKey(items)
-		if key == lastItemsKey {
-			log.Printf("tray: tray items unchanged")
-			return
-		}
-		lastItemsKey = key
-		ui(func() { renderTrayItems(container, conn, items) })
-	}
-	refresh()
-
 	if err := conn.AddMatchSignal(dbus.WithMatchInterface("org.kde.StatusNotifierWatcher")); err != nil {
 		log.Printf("tray: watcher match failed: %v", err)
 	}
 	if err := conn.AddMatchSignal(dbus.WithMatchInterface("org.kde.StatusNotifierItem")); err != nil {
 		log.Printf("tray: item match failed: %v", err)
+	}
+	if err := conn.AddMatchSignal(dbus.WithMatchInterface("org.ayatana.NotificationItem")); err != nil {
+		log.Printf("tray: ayatana item match failed: %v", err)
 	}
 	if err := conn.AddMatchSignal(
 		dbus.WithMatchInterface("org.freedesktop.DBus.Properties"),
@@ -140,6 +136,44 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 	}
 	defer debounceTimer.Stop()
 
+	scheduleRefresh := func(delay time.Duration) {
+		if !debounceTimer.Stop() {
+			select {
+			case <-debounceTimer.C:
+			default:
+			}
+		}
+		debounceTimer.Reset(delay)
+	}
+
+	var lastItemsKey string
+	retryCount := 0
+	refresh := func() {
+		log.Printf("tray: refreshing tray items...")
+		items, needsRetry := readTrayItems(conn, watcher)
+		log.Printf("tray: found %d tray items", len(items))
+		key := trayItemsKey(items)
+		if key != lastItemsKey {
+			lastItemsKey = key
+			ui(func() { renderTrayItems(container, conn, items) })
+		} else {
+			log.Printf("tray: tray items unchanged")
+		}
+
+		if needsRetry {
+			retryCount++
+			if retryCount <= 5 {
+				delay := time.Duration(retryCount) * 250 * time.Millisecond
+				log.Printf("tray: retrying tray refresh in %s for items that are not ready yet", delay)
+				scheduleRefresh(delay)
+				return
+			}
+		}
+		retryCount = 0
+	}
+
+	refresh()
+
 	for {
 		select {
 		case signal := <-signals:
@@ -149,13 +183,8 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 			if !traySignalNeedsRefresh(signal, watcherBus) {
 				continue
 			}
-			if !debounceTimer.Stop() {
-				select {
-				case <-debounceTimer.C:
-				default:
-				}
-			}
-			debounceTimer.Reset(120 * time.Millisecond)
+			retryCount = 0
+			scheduleRefresh(120 * time.Millisecond)
 		case <-debounceTimer.C:
 			refresh()
 		}
@@ -174,20 +203,32 @@ func traySignalNeedsRefresh(signal *dbus.Signal, watcherBus string) bool {
 		"org.kde.StatusNotifierItem.NewIconThemePath",
 		"org.kde.StatusNotifierItem.NewStatus",
 		"org.kde.StatusNotifierItem.NewTitle",
-		"org.kde.StatusNotifierItem.NewToolTip":
+		"org.kde.StatusNotifierItem.NewToolTip",
+		"org.ayatana.NotificationItem.NewIcon",
+		"org.ayatana.NotificationItem.NewAttentionIcon",
+		"org.ayatana.NotificationItem.NewOverlayIcon",
+		"org.ayatana.NotificationItem.NewIconThemePath",
+		"org.ayatana.NotificationItem.NewStatus",
+		"org.ayatana.NotificationItem.NewTitle",
+		"org.ayatana.NotificationItem.NewToolTip":
 		return true
 	case "org.freedesktop.DBus.NameOwnerChanged":
 		if len(signal.Body) == 0 {
 			return false
 		}
 		name, _ := signal.Body[0].(string)
-		return name == watcherBus || strings.HasPrefix(name, "org.kde.StatusNotifierItem")
+		return name == watcherBus ||
+			strings.HasPrefix(name, "org.kde.StatusNotifierItem") ||
+			strings.HasPrefix(name, "org.ayatana.NotificationItem") ||
+			strings.HasPrefix(name, ":")
 	case "org.freedesktop.DBus.Properties.PropertiesChanged":
 		if len(signal.Body) == 0 {
 			return false
 		}
 		iface, _ := signal.Body[0].(string)
-		return iface == "org.kde.StatusNotifierWatcher" || iface == "org.kde.StatusNotifierItem"
+		return iface == "org.kde.StatusNotifierWatcher" ||
+			iface == "org.kde.StatusNotifierItem" ||
+			iface == "org.ayatana.NotificationItem"
 	default:
 		return false
 	}
@@ -216,42 +257,45 @@ func trayItemsKey(items []trayItem) string {
 	return builder.String()
 }
 
-func readTrayItems(conn *dbus.Conn, watcher dbus.BusObject) []trayItem {
+func readTrayItems(conn *dbus.Conn, watcher dbus.BusObject) ([]trayItem, bool) {
 	call := watcher.Call("org.freedesktop.DBus.Properties.Get", 0, "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems")
 	if call.Err != nil {
 		log.Printf("[tray] SNI watcher call failed: %v", call.Err)
-		return nil
+		return nil, false
 	}
 
 	variant := dbus.Variant{}
 	if err := call.Store(&variant); err != nil {
 		log.Printf("[tray] SNI watcher variant store failed: %v", err)
-		return nil
+		return nil, false
 	}
 
 	registered, ok := variant.Value().([]string)
 	if !ok {
 		log.Printf("[tray] SNI watcher returned non-string slice: %v", variant.Value())
-		return nil
+		return nil, false
 	}
 
 	items := make([]trayItem, 0, len(registered))
+	needsRetry := false
 	for _, id := range registered {
 		bus, path, ok := parseTrayItemID(id)
 		if !ok {
 			continue
 		}
 
-		item, ok := readTrayItem(conn, id, bus, path)
-		if !ok {
-			continue
+		item, state := readTrayItem(conn, id, bus, path)
+		switch state {
+		case trayReadReady:
+			items = append(items, item)
+		case trayReadRetry:
+			needsRetry = true
 		}
-		items = append(items, item)
 	}
 
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	log.Printf("[tray] Using SNI tray items: %v", items)
-	return items
+	return items, needsRetry
 }
 
 func parseTrayItemID(id string) (bus string, path dbus.ObjectPath, ok bool) {
@@ -277,21 +321,16 @@ func parseTrayItemID(id string) (bus string, path dbus.ObjectPath, ok bool) {
 	return bus, path, true
 }
 
-func readTrayItem(conn *dbus.Conn, id string, bus string, path dbus.ObjectPath) (trayItem, bool) {
+func readTrayItem(conn *dbus.Conn, id string, bus string, path dbus.ObjectPath) (trayItem, trayReadState) {
 	obj := conn.Object(bus, path)
-	call := obj.Call("org.freedesktop.DBus.Properties.GetAll", 0, "org.kde.StatusNotifierItem")
-	if call.Err != nil {
-		return trayItem{}, false
-	}
-
-	props := map[string]dbus.Variant{}
-	if err := call.Store(&props); err != nil {
-		return trayItem{}, false
+	props, ok := readTrayItemProperties(obj)
+	if !ok {
+		return trayItem{}, trayReadRetry
 	}
 
 	status := variantString(props, "Status")
 	if strings.EqualFold(status, "Passive") {
-		return trayItem{}, false
+		return trayItem{}, trayReadHidden
 	}
 
 	iconName := variantString(props, "IconName")
@@ -353,7 +392,23 @@ func readTrayItem(conn *dbus.Conn, id string, bus string, path dbus.ObjectPath) 
 		IconPixmapH:   pixmapH,
 		IconThemePath: iconThemePath,
 		Title:         title,
-	}, true
+	}, trayReadReady
+}
+
+func readTrayItemProperties(obj dbus.BusObject) (map[string]dbus.Variant, bool) {
+	for _, iface := range []string{"org.kde.StatusNotifierItem", "org.ayatana.NotificationItem"} {
+		call := obj.Call("org.freedesktop.DBus.Properties.GetAll", 0, iface)
+		if call.Err != nil {
+			continue
+		}
+
+		props := map[string]dbus.Variant{}
+		if err := call.Store(&props); err != nil {
+			continue
+		}
+		return props, true
+	}
+	return nil, false
 }
 
 func renderTrayItems(container *gtk.Box, conn *dbus.Conn, items []trayItem) {
@@ -629,21 +684,23 @@ func coerceVariantMap(value any) (map[string]dbus.Variant, bool) {
 
 func readMenuPath(conn *dbus.Conn, bus string, itemPath dbus.ObjectPath) dbus.ObjectPath {
 	obj := conn.Object(bus, itemPath)
-	call := obj.Call("org.freedesktop.DBus.Properties.Get", 0, "org.kde.StatusNotifierItem", "Menu")
-	if call.Err != nil {
-		return ""
-	}
+	for _, iface := range []string{"org.kde.StatusNotifierItem", "org.ayatana.NotificationItem"} {
+		call := obj.Call("org.freedesktop.DBus.Properties.Get", 0, iface, "Menu")
+		if call.Err != nil {
+			continue
+		}
 
-	var variant dbus.Variant
-	if err := call.Store(&variant); err != nil {
-		return ""
-	}
+		var variant dbus.Variant
+		if err := call.Store(&variant); err != nil {
+			continue
+		}
 
-	path, ok := variant.Value().(dbus.ObjectPath)
-	if !ok || !path.IsValid() {
-		return ""
+		path, ok := variant.Value().(dbus.ObjectPath)
+		if ok && path.IsValid() {
+			return path
+		}
 	}
-	return path
+	return ""
 }
 
 func variantBoolDefault(props map[string]dbus.Variant, key string, fallback bool) bool {
