@@ -14,8 +14,8 @@ import (
 
 const userCSSRelativePath = ".config/status-bar/style.css"
 
-func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow {
-	loadCSS(defaultCSS)
+func New(application *gtk.Application, defaultCSS string, cssPath string) *gtk.ApplicationWindow {
+	loadCSS(defaultCSS, cssPath)
 	cfg := config.Load()
 
 	window := gtk.NewApplicationWindow(application)
@@ -81,14 +81,21 @@ func New(application *gtk.Application, defaultCSS string) *gtk.ApplicationWindow
 	return window
 }
 
-func loadCSS(defaultCSS string) {
+func loadCSS(defaultCSS string, cssPath string) {
 	display := gdk.DisplayGetDefault()
 	if display == nil {
 		return
 	}
 
 	css := defaultCSS
-	if path, ok := userCSSPath(); ok {
+	if cssPath != "" {
+		if data, err := os.ReadFile(cssPath); err == nil {
+			css = string(data)
+			log.Printf("loaded css from flag: %s", cssPath)
+		} else {
+			log.Printf("--css flag path unreadable, falling back: %v", err)
+		}
+	} else if path, ok := userCSSPath(); ok {
 		if userCSS, err := os.ReadFile(path); err == nil {
 			css = string(userCSS)
 			log.Printf("loaded css override from %s", path)
