@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -206,8 +207,12 @@ func newAudioDeviceRow(device audioDevice, requestRefresh func(), beginAdjust fu
 
 	button := gtk.NewButtonWithLabel(formatAudioDevice(device))
 	button.SetHasFrame(false)
-	button.SetHAlign(gtk.AlignStart)
 	button.AddCSSClass("audio-device-button")
+	if child := button.Child(); child != nil {
+		if lbl, ok := child.(*gtk.Label); ok {
+			lbl.SetXAlign(0)
+		}
+	}
 	button.ConnectClicked(func() {
 		if device.IsInput {
 			runDetached("pactl", "set-default-source", strconv.Itoa(device.ID))
@@ -302,45 +307,46 @@ func readPulseDeviceList(input bool, defaultName string) []audioDevice {
 	if input {
 		kind = "sources"
 	}
-	output, err := runCommand("pactl", "list", "short", kind)
+	output, err := runCommand("pactl", "-f", "json", "list", kind)
 	if err != nil {
 		return nil
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	devices := make([]audioDevice, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
+	var entries []struct {
+		Index       int    `json:"index"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Mute        bool   `json:"mute"`
+		Volume      map[string]struct {
+			Percent string `json:"value_percent"`
+		} `json:"volume"`
+	}
+	if err := json.Unmarshal(output, &entries); err != nil {
+		return nil
+	}
 
-		fields := strings.Split(line, "\t")
-		if len(fields) < 2 {
-			continue
-		}
-
-		id, err := strconv.Atoi(strings.TrimSpace(fields[0]))
-		if err != nil {
-			continue
-		}
-
-		name := strings.TrimSpace(fields[1])
+	devices := make([]audioDevice, 0, len(entries))
+	for _, e := range entries {
+		name := e.Description
 		if name == "" {
-			continue
+			name = simplifyPulseName(e.Name)
 		}
 
-		volume, muted, ok := readPulseDeviceVolume(input, strconv.Itoa(id))
-		if !ok {
-			volume = 0
+		vol := 0
+		for _, ch := range e.Volume {
+			p := strings.TrimSuffix(ch.Percent, "%")
+			if v, err := strconv.Atoi(p); err == nil {
+				vol = v
+				break
+			}
 		}
 
 		devices = append(devices, audioDevice{
-			ID:        id,
-			Name:      simplifyPulseName(name),
-			IsDefault: defaultName != "" && name == defaultName,
-			Volume:    volume,
-			Muted:     muted,
+			ID:        e.Index,
+			Name:      name,
+			IsDefault: defaultName != "" && e.Name == defaultName,
+			Volume:    vol,
+			Muted:     e.Mute,
 			IsInput:   input,
 		})
 	}
@@ -416,8 +422,26 @@ func simplifyPulseName(name string) string {
 	name = strings.TrimPrefix(name, "bluez_output.")
 	name = strings.TrimPrefix(name, "bluez_input.")
 	name = strings.TrimSuffix(name, ".monitor")
+
+	// Strip common technical prefixes like "pci-0000_00_1f.3-platform-skl_hda_dsp_generic."
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		candidate := name[idx+1:]
+		if candidate != "" {
+			name = candidate
+		}
+	}
+
 	name = strings.ReplaceAll(name, "_", " ")
-	return strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, "-", " ")
+
+	// Capitalize first letter of each word
+	words := strings.Fields(name)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func extractPercents(text string) []int {

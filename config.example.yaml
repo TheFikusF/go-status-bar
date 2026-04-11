@@ -51,8 +51,9 @@ wallpaper_interval: 10  # minutes
 
 # ── Weather ───────────────────────────────────────────────────────────────────
 # Coordinates for open-meteo.com (decimal degrees).
-weather_lat: "50.0755"
-weather_lon: "14.4378"
+weather_lat: "49.1951"
+weather_lon: "16.6068"
+weather_location: Brno
 
 # ── Languages ─────────────────────────────────────────────────────────────────
 # Matched in order against the active Hyprland keymap name (case-insensitive).
@@ -63,4 +64,4 @@ languages:
   - match: ukrain
     label: "🇺🇦 УКР"
   - match: russian
-    label: "🛡 РДК"
+    label: "🛡️ РДК"

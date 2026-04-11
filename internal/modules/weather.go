@@ -40,7 +40,11 @@ func NewWeather(cfg *config.Config) gtk.Widgetter {
 	menu.SetName("weather-menu")
 	popover.SetChild(menu)
 
-	title := gtk.NewLabel("This Week")
+	titleText := "Weather"
+	if cfg.WeatherLocation != "" {
+		titleText = "Weather — " + cfg.WeatherLocation
+	}
+	title := gtk.NewLabel(titleText)
 	title.SetName("weather-menu-title")
 	title.SetXAlign(0)
 	menu.Append(title)
@@ -107,7 +111,7 @@ func readWeatherSnapshot(lat, lon string) weatherSnapshot {
 	}
 
 	result := weatherSnapshot{
-		CurrentText: fmt.Sprintf("%.0fC %s", payload.Current.Temperature, weatherIcon(payload.Current.Code)),
+		CurrentText: fmt.Sprintf("%.0f°C %s", payload.Current.Temperature, weatherIconShort(payload.Current.Code)),
 	}
 
 	count := minInt(len(payload.Daily.Time), len(payload.Daily.TemperatureMax), len(payload.Daily.WeatherCode), 7)
@@ -117,8 +121,8 @@ func readWeatherSnapshot(lat, lon string) weatherSnapshot {
 			continue
 		}
 		line := fmt.Sprintf(
-			"%s - %.0fC %s",
-			parsedDate.Format("Jan, 02"),
+			"%s  %.0f°C  %s",
+			parsedDate.Format("Mon, Jan 02"),
 			payload.Daily.TemperatureMax[i],
 			weatherIcon(payload.Daily.WeatherCode[i]),
 		)
@@ -131,19 +135,64 @@ func readWeatherSnapshot(lat, lon string) weatherSnapshot {
 func weatherIcon(code int) string {
 	switch {
 	case code == 0:
+		return "☀️ Clear"
+	case code == 1:
+		return "🌤️ Mostly clear"
+	case code == 2:
+		return "⛅ Partly cloudy"
+	case code == 3:
+		return "☁️ Overcast"
+	case code == 45 || code == 48:
+		return "🌫️ Fog"
+	case code >= 51 && code <= 55:
+		return "🌦️ Drizzle"
+	case code >= 56 && code <= 57:
+		return "🌧️ Freezing drizzle"
+	case code >= 61 && code <= 65:
+		return "🌧️ Rain"
+	case code >= 66 && code <= 67:
+		return "🌧️ Freezing rain"
+	case code >= 71 && code <= 75:
+		return "❄️ Snow"
+	case code == 77:
+		return "🌨️ Snow grains"
+	case code >= 80 && code <= 82:
+		return "🌧️ Showers"
+	case code >= 85 && code <= 86:
+		return "🌨️ Snow showers"
+	case code == 95:
+		return "⛈️ Thunderstorm"
+	case code >= 96 && code <= 99:
+		return "⛈️ Thunderstorm + hail"
+	default:
+		return "🌡️"
+	}
+}
+
+func weatherIconShort(code int) string {
+	switch {
+	case code == 0:
 		return "☀️"
-	case code <= 3:
+	case code == 1:
+		return "🌤️"
+	case code == 2:
 		return "⛅"
-	case code < 60:
-		return "🌫"
-	case code < 70:
-		return "🌧"
-	case code < 80:
+	case code == 3:
+		return "☁️"
+	case code == 45 || code == 48:
+		return "🌫️"
+	case code >= 51 && code <= 57:
+		return "🌦️"
+	case code >= 61 && code <= 67:
+		return "🌧️"
+	case code >= 71 && code <= 77:
 		return "❄️"
-	case code < 100:
+	case code >= 80 && code <= 86:
+		return "🌨️"
+	case code >= 95:
 		return "⛈️"
 	default:
-		return "🌦️"
+		return "🌡️"
 	}
 }
 

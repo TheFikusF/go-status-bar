@@ -599,6 +599,7 @@ button:hover {
 #wallpaper-menu,
 #clipboard-menu,
 #tray-item-menu,
+#language-menu,
 #power-menu,
 #wifi-menu,
 #focused-app-menu {
@@ -619,6 +620,7 @@ button:hover {
 #weather-menu-title,
 #wallpaper-menu-title,
 #clipboard-menu-title,
+#language-menu-title,
 #audio-menu-title,
 #wifi-menu-title {
   font-size: 15px;
@@ -670,6 +672,16 @@ button:hover {
 .audio-device-row.active,
 .wifi-network-row.active,
 .wallpaper-choice-row.active {
+  color: #f1c40f;
+  font-weight: 900;
+}
+
+.language-row {
+  font-size: 15px;
+  padding: 6px 12px;
+}
+
+.language-row.active {
   color: #f1c40f;
   font-weight: 900;
 }

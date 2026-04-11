@@ -53,6 +53,7 @@ type Config struct {
 	WallpaperInterval   int             `yaml:"wallpaper_interval"`
 	WeatherLat          string          `yaml:"weather_lat"`
 	WeatherLon          string          `yaml:"weather_lon"`
+	WeatherLocation     string          `yaml:"weather_location"`
 	Languages           []LanguageEntry `yaml:"languages"`
 }
 

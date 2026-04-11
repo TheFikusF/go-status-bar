@@ -105,8 +105,12 @@ func NewNetwork() gtk.Widgetter {
 						network := network
 						row := gtk.NewButtonWithLabel(formatWifiNetwork(network))
 						row.SetHasFrame(false)
-						row.SetHAlign(gtk.AlignStart)
 						row.AddCSSClass("wifi-network-row")
+						if child := row.Child(); child != nil {
+							if lbl, ok := child.(*gtk.Label); ok {
+								lbl.SetXAlign(0)
+							}
+						}
 						if network.Active {
 							row.AddCSSClass("active")
 						}

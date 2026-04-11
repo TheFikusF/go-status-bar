@@ -101,6 +101,19 @@ func attachClick(widget gtk.Widgetter, left, right func()) {
 	widget.(interface{ AddController(gtk.EventControllerer) }).AddController(click)
 }
 
+// Global popover registry: when one opens, all others close.
+var activePopovers []func()
+
+func registerPopover(closeFn func()) {
+	activePopovers = append(activePopovers, closeFn)
+}
+
+func closeAllPopovers() {
+	for _, fn := range activePopovers {
+		fn()
+	}
+}
+
 func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick func(), beforeOpen func()) (func(), func(bool)) {
 	popover.SetAutohide(false)
 	popover.SetCascadePopdown(false)
@@ -117,11 +130,25 @@ func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick f
 	var closeToken int
 	var visible bool
 
+	forceClose := func() {
+		if visible {
+			overAnchor = false
+			overPopup = false
+			interacting = false
+			keyHeld = false
+			popover.Popdown()
+			visible = false
+		}
+	}
+	registerPopover(forceClose)
+
 	open := func() {
 		closeToken++
 		if visible {
 			return
 		}
+
+		closeAllPopovers()
 
 		if root := anchorWidget.Root(); root != nil {
 			if popover.Parent() != root {

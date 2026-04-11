@@ -53,9 +53,18 @@ func NewLanguage(cfg *config.Config) gtk.Widgetter {
 	module.Label.SetHAlign(gtk.AlignFill)
 	module.Label.SetXAlign(0.5)
 	keyboardName := "at-translated-set-2-keyboard"
-	attachClick(module.Box, func() {
-		runDetached("hyprctl", "switchxkblayout", keyboardName, "next")
-	}, nil)
+
+	popover := gtk.NewPopover()
+	popover.AddCSSClass("status-popup")
+	popover.SetHasArrow(false)
+	popover.SetAutohide(true)
+	popover.SetParent(module.Box)
+
+	menu := gtk.NewBox(gtk.OrientationVertical, 4)
+	menu.SetName("language-menu")
+	popover.SetChild(menu)
+
+	var currentLayout string
 
 	fmtLayout := func(layout string) string {
 		if len(cfg.Languages) > 0 {
@@ -69,6 +78,38 @@ func NewLanguage(cfg *config.Config) gtk.Widgetter {
 		}
 		return formatLanguage(layout)
 	}
+
+	var updatePopover func()
+	updatePopover = func() {
+		removeChildren(menu)
+		for i, entry := range cfg.Languages {
+			idx := strconv.Itoa(i)
+			match := strings.ToLower(entry.Match)
+			active := currentLayout != "" && strings.Contains(strings.ToLower(currentLayout), match)
+			label := entry.Label
+			if active {
+				label = "· " + entry.Label
+			}
+			row := gtk.NewButtonWithLabel(label)
+			row.SetHasFrame(false)
+			row.AddCSSClass("language-row")
+			if active {
+				row.AddCSSClass("active")
+			}
+			row.ConnectClicked(func() {
+				runDetached("hyprctl", "switchxkblayout", keyboardName, idx)
+				time.AfterFunc(100*time.Millisecond, func() {
+					ui(func() { updatePopover() })
+				})
+			})
+			menu.Append(row)
+		}
+	}
+
+	attachHoverPopover(module.Box, popover, nil, updatePopover)
+	attachClick(module.Box, func() {
+		runDetached("hyprctl", "switchxkblayout", keyboardName, "next")
+	}, nil)
 
 	refresh := func() {
 		output, err := runCommand("hyprctl", "devices", "-j")
@@ -93,7 +134,10 @@ func NewLanguage(cfg *config.Config) gtk.Widgetter {
 			}
 		}
 
-		ui(func() { setTextModule(module, fmtLayout(layout)) })
+		ui(func() {
+			currentLayout = layout
+			setTextModule(module, fmtLayout(layout))
+		})
 	}
 
 	refresh()
@@ -101,7 +145,10 @@ func NewLanguage(cfg *config.Config) gtk.Widgetter {
 		for event := range subscribeHyprEvents() {
 			if event.Name == "activelayout" {
 				if _, layout, ok := strings.Cut(event.Data, ","); ok {
-					ui(func() { setTextModule(module, fmtLayout(layout)) })
+					ui(func() {
+						currentLayout = layout
+						setTextModule(module, fmtLayout(layout))
+					})
 					continue
 				}
 				refresh()

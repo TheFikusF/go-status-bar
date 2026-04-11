@@ -867,6 +867,7 @@ button:hover {
 #workspace-popup,
 #wallpaper-menu,
 #clipboard-menu,
+#language-menu,
 #tray-item-menu,
 #power-menu,
 #wifi-menu,
@@ -957,6 +958,17 @@ button:hover {
 .audio-device-row.active,
 .wifi-network-row.active,
 .wallpaper-choice-row.active {
+  color: #90d4ff;
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(100, 200, 255, 0.5);
+}
+
+.language-row {
+  font-size: 15px;
+  padding: 6px 12px;
+}
+
+.language-row.active {
   color: #90d4ff;
   font-weight: 700;
   text-shadow: 0 0 6px rgba(100, 200, 255, 0.5);

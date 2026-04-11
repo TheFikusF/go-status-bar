@@ -184,6 +184,13 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 			listBox.Append(label)
 			return
 		}
+
+		// Build rows immediately with just labels (no images yet)
+		type wpRow struct {
+			inner *gtk.Box
+			name  string
+		}
+		var rows []wpRow
 		for _, file := range files {
 			if file.IsDir() {
 				continue
@@ -199,13 +206,11 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 
 			inner := gtk.NewBox(gtk.OrientationHorizontal, 8)
 
-			// Preview icon
-			img := gtk.NewImageFromFile(filepath.Join(dir, name))
-			img.SetPixelSize(48)
-			img.SetVAlign(gtk.AlignCenter)
-			inner.Append(img)
+			// Placeholder for image
+			placeholder := gtk.NewBox(gtk.OrientationHorizontal, 0)
+			placeholder.SetSizeRequest(48, 48)
+			inner.Append(placeholder)
 
-			// Label
 			label := gtk.NewLabel(name)
 			label.SetHAlign(gtk.AlignStart)
 			label.SetTooltipText(name)
@@ -229,7 +234,26 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 				}(name)
 			})
 			listBox.Append(row)
+			rows = append(rows, wpRow{inner: inner, name: name})
 		}
+
+		// Load images in background and swap placeholders
+		go func() {
+			for _, r := range rows {
+				imgPath := filepath.Join(dir, r.name)
+				inner := r.inner
+				ui(func() {
+					first := inner.FirstChild()
+					img := gtk.NewImageFromFile(imgPath)
+					img.SetPixelSize(48)
+					img.SetVAlign(gtk.AlignCenter)
+					inner.InsertChildAfter(img, nil)
+					if first != nil {
+						inner.Remove(first)
+					}
+				})
+			}
+		}()
 	}
 
 	attachHoverPopover(button, popover, nil, updatePopover)
