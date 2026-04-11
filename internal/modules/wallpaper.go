@@ -56,6 +56,14 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 	currentWallpaper := filepath.Base(readCurrentWallpaper())
 	wpDir := cfg.WallpapersDir
 
+	// Auto-switch state from config
+	autoEnabled := cfg.WallpaperAutoSwitch
+	autoInterval := time.Duration(cfg.WallpaperInterval) * time.Minute
+	if autoInterval < 1*time.Minute {
+		autoInterval = 10 * time.Minute
+	}
+	var autoTimer *time.Timer
+
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
 	popover.SetHasArrow(false)
@@ -71,8 +79,96 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 	title.SetXAlign(0)
 	menu.Append(title)
 
+	// Auto-switch controls
+	controlsRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	controlsRow.AddCSSClass("wallpaper-controls-row")
+
+	autoLabel := gtk.NewLabel("Auto")
+	autoLabel.AddCSSClass("wallpaper-controls-label")
+	autoSwitch := gtk.NewSwitch()
+	autoSwitch.SetActive(autoEnabled)
+
+	minusBtn := gtk.NewButtonWithLabel("−")
+	minusBtn.SetHasFrame(false)
+	minusBtn.AddCSSClass("wallpaper-controls-btn")
+
+	intervalLabel := gtk.NewLabel(formatInterval(autoInterval))
+	intervalLabel.AddCSSClass("wallpaper-controls-interval")
+
+	plusBtn := gtk.NewButtonWithLabel("+")
+	plusBtn.SetHasFrame(false)
+	plusBtn.AddCSSClass("wallpaper-controls-btn")
+
+	controlsRow.Append(autoLabel)
+	controlsRow.Append(autoSwitch)
+	spacer := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	spacer.SetHExpand(true)
+	controlsRow.Append(spacer)
+	controlsRow.Append(minusBtn)
+	controlsRow.Append(intervalLabel)
+	controlsRow.Append(plusBtn)
+	menu.Append(controlsRow)
+
 	listBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(listBox)
+
+	// Auto-switch timer logic
+	var scheduleNext func()
+	doShuffle := func() {
+		wallpaper, err := shuffleWallpaper()
+		if err == nil {
+			ui(func() {
+				currentWallpaper = filepath.Base(wallpaper)
+				button.SetTooltipText("Wallpaper: " + currentWallpaper)
+			})
+		}
+		if autoEnabled {
+			scheduleNext()
+		}
+	}
+	scheduleNext = func() {
+		if autoTimer != nil {
+			autoTimer.Stop()
+		}
+		autoTimer = time.AfterFunc(autoInterval, doShuffle)
+	}
+
+	updateControls := func() {
+		intervalLabel.SetLabel(formatInterval(autoInterval))
+		minusBtn.SetSensitive(autoEnabled && autoInterval > 1*time.Minute)
+		plusBtn.SetSensitive(autoEnabled)
+	}
+
+	autoSwitch.ConnectStateSet(func(state bool) bool {
+		autoEnabled = state
+		if autoEnabled {
+			scheduleNext()
+		} else if autoTimer != nil {
+			autoTimer.Stop()
+		}
+		updateControls()
+		return false
+	})
+
+	minusBtn.ConnectClicked(func() {
+		if autoInterval > 1*time.Minute {
+			autoInterval -= 1 * time.Minute
+			if autoEnabled {
+				scheduleNext()
+			}
+			updateControls()
+		}
+	})
+
+	plusBtn.ConnectClicked(func() {
+		autoInterval += 1 * time.Minute
+		if autoEnabled {
+			scheduleNext()
+		}
+		updateControls()
+	})
+
+	updateControls()
 
 	// Function to update popover content
 	updatePopover := func() {
@@ -158,7 +254,34 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 		}()
 	})
 
+	// Shuffle wallpaper on launch and start auto-switch timer
+	go func() {
+		wallpaper, err := shuffleWallpaper()
+		ui(func() {
+			if err == nil {
+				currentWallpaper = filepath.Base(wallpaper)
+				button.SetTooltipText("Wallpaper: " + currentWallpaper)
+			}
+			if autoEnabled {
+				scheduleNext()
+			}
+		})
+	}()
+
 	return button
+}
+
+func formatInterval(d time.Duration) string {
+	m := int(d.Minutes())
+	if m < 60 {
+		return fmt.Sprintf("%dm", m)
+	}
+	h := m / 60
+	rem := m % 60
+	if rem == 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dh%dm", h, rem)
 }
 
 func shuffleWallpaper() (string, error) {

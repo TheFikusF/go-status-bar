@@ -149,22 +149,18 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 	var lastItemsKey string
 	retryCount := 0
 	refresh := func() {
-		log.Printf("tray: refreshing tray items...")
 		items, needsRetry := readTrayItems(conn, watcher)
-		log.Printf("tray: found %d tray items", len(items))
 		key := trayItemsKey(items)
 		if key != lastItemsKey {
 			lastItemsKey = key
 			ui(func() { renderTrayItems(container, conn, items) })
-		} else {
-			log.Printf("tray: tray items unchanged")
 		}
 
 		if needsRetry {
 			retryCount++
 			if retryCount <= 5 {
 				delay := time.Duration(retryCount) * 250 * time.Millisecond
-				log.Printf("tray: retrying tray refresh in %s for items that are not ready yet", delay)
+
 				scheduleRefresh(delay)
 				return
 			}

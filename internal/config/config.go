@@ -6,52 +6,54 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 )
 
 type WorldClock struct {
-	Name string `toml:"name"`
-	Zone string `toml:"zone"`
+	Name string `yaml:"name"`
+	Zone string `yaml:"zone"`
 }
 
 type LanguageEntry struct {
-	Match string `toml:"match"` // substring to match in layout name (case-insensitive)
-	Label string `toml:"label"` // displayed label
+	Match string `yaml:"match"`
+	Label string `yaml:"label"`
 }
 
 type Modules struct {
-	Workspaces    bool `toml:"workspaces"`
-	FocusedApp    bool `toml:"focused_app"`
-	Music         bool `toml:"music"`
-	Mode          bool `toml:"mode"`
-	Scratchpad    bool `toml:"scratchpad"`
-	DateClock     bool `toml:"date_clock"`
-	TimeClock     bool `toml:"time_clock"`
-	Notification  bool `toml:"notification"`
-	MPD           bool `toml:"mpd"`
-	Wallpaper     bool `toml:"wallpaper"`
-	Clipboard     bool `toml:"clipboard"`
-	Weather       bool `toml:"weather"`
-	Pipewire      bool `toml:"pipewire"`
-	Network       bool `toml:"network"`
-	PowerProfile  bool `toml:"power_profile"`
-	CPU           bool `toml:"cpu"`
-	Memory        bool `toml:"memory"`
-	Temperature   bool `toml:"temperature"`
-	KeyboardState bool `toml:"keyboard_state"`
-	Language      bool `toml:"language"`
-	Battery       bool `toml:"battery"`
-	Tray          bool `toml:"tray"`
-	Power         bool `toml:"power"`
+	Workspaces    bool `yaml:"workspaces"`
+	FocusedApp    bool `yaml:"focused_app"`
+	Music         bool `yaml:"music"`
+	Mode          bool `yaml:"mode"`
+	Scratchpad    bool `yaml:"scratchpad"`
+	DateClock     bool `yaml:"date_clock"`
+	TimeClock     bool `yaml:"time_clock"`
+	Notification  bool `yaml:"notification"`
+	MPD           bool `yaml:"mpd"`
+	Wallpaper     bool `yaml:"wallpaper"`
+	Clipboard     bool `yaml:"clipboard"`
+	Weather       bool `yaml:"weather"`
+	Pipewire      bool `yaml:"pipewire"`
+	Network       bool `yaml:"network"`
+	PowerProfile  bool `yaml:"power_profile"`
+	CPU           bool `yaml:"cpu"`
+	Memory        bool `yaml:"memory"`
+	Temperature   bool `yaml:"temperature"`
+	KeyboardState bool `yaml:"keyboard_state"`
+	Language      bool `yaml:"language"`
+	Battery       bool `yaml:"battery"`
+	Tray          bool `yaml:"tray"`
+	Power         bool `yaml:"power"`
 }
 
 type Config struct {
-	Modules       Modules         `toml:"modules"`
-	WorldClocks   []WorldClock    `toml:"world_clocks"`
-	WallpapersDir string          `toml:"wallpapers_dir"`
-	WeatherLat    string          `toml:"weather_lat"`
-	WeatherLon    string          `toml:"weather_lon"`
-	Languages     []LanguageEntry `toml:"languages"`
+	Modules             Modules         `yaml:"modules"`
+	WorldClocks         []WorldClock    `yaml:"world_clocks"`
+	WallpapersDir       string          `yaml:"wallpapers_dir"`
+	WallpaperAutoSwitch bool            `yaml:"wallpaper_auto_switch"`
+	WallpaperInterval   int             `yaml:"wallpaper_interval"`
+	WeatherLat          string          `yaml:"weather_lat"`
+	WeatherLon          string          `yaml:"weather_lon"`
+	Languages           []LanguageEntry `yaml:"languages"`
 }
 
 func defaultConfig() Config {
@@ -87,10 +89,12 @@ func defaultConfig() Config {
 			{Name: "San Francisco", Zone: "America/Los_Angeles"},
 			{Name: "Maui", Zone: "Pacific/Honolulu"},
 		},
-		WallpapersDir: filepath.Join(mustHomeDir(), "Pictures", "wp"),
-		WeatherLat:    "50.0755",
-		WeatherLon:    "14.4378",
-		Languages:     nil, // nil = use built-in formatLanguage logic
+		WallpapersDir:       filepath.Join(mustHomeDir(), "Pictures", "wp"),
+		WallpaperAutoSwitch: true,
+		WallpaperInterval:   10,
+		WeatherLat:          "50.0755",
+		WeatherLon:          "14.4378",
+		Languages:           nil, // nil = use built-in formatLanguage logic
 	}
 }
 
@@ -105,7 +109,7 @@ func configPath() string {
 	if p := os.Getenv("STATUSBAR_CONFIG"); p != "" {
 		return p
 	}
-	return filepath.Join(mustHomeDir(), ".config", "status-bar", "config.toml")
+	return filepath.Join(mustHomeDir(), ".config", "status-bar", "config.yaml")
 }
 
 // Load reads the config file if it exists, falling back to defaults for any
@@ -123,7 +127,7 @@ func Load() *Config {
 		return &cfg
 	}
 
-	if _, err := toml.Decode(string(data), &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		log.Printf("config: parse %s: %v", path, err)
 	}
 	// Expand leading ~ in paths.

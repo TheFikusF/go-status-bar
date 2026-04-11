@@ -1,80 +1,66 @@
 # status-bar configuration
-# Copy to ~/.config/status-bar/config.toml
+# Copy to ~/.config/status-bar/config.yaml
 # Override path with STATUSBAR_CONFIG env var.
 
 # ── Modules ──────────────────────────────────────────────────────────────────
 # Set any module to false to hide it entirely.
-[modules]
-workspaces    = false
-focused_app   = true
-music         = true
-mode          = true
-scratchpad    = true
-
-date_clock    = true
-time_clock    = true
-notification  = true
-
-mpd           = true
-wallpaper     = true
-clipboard     = true
-weather       = true
-pipewire      = true
-network       = true
-power_profile = false
-cpu           = true
-memory        = true
-temperature   = true
-keyboard_state = false
-language      = true
-battery       = true
-tray          = true
-power         = true
+modules:
+  workspaces: false
+  focused_app: true
+  music: true
+  mode: true
+  scratchpad: true
+  date_clock: true
+  time_clock: true
+  notification: true
+  mpd: true
+  wallpaper: true
+  clipboard: true
+  weather: true
+  pipewire: true
+  network: true
+  power_profile: false
+  cpu: true
+  memory: true
+  temperature: true
+  keyboard_state: false
+  language: true
+  battery: true
+  tray: true
+  power: true
 
 # ── World clocks (shown in time popup) ───────────────────────────────────────
-[[world_clocks]]
-name = "Prague"
-zone = "Europe/Prague"
-
-[[world_clocks]]
-name = "New York"
-zone = "America/New_York"
-
-[[world_clocks]]
-name = "Tel Aviv"
-zone = "Asia/Tel_Aviv"
-
-[[world_clocks]]
-name = "Kyiv"
-zone = "Europe/Kyiv"
-
-[[world_clocks]]
-name = "San Francisco"
-zone = "America/Los_Angeles"
-
-[[world_clocks]]
-name = "Maui"
-zone = "Pacific/Honolulu"
+world_clocks:
+  - name: Prague
+    zone: Europe/Prague
+  - name: New York
+    zone: America/New_York
+  - name: Tel Aviv
+    zone: Asia/Tel_Aviv
+  - name: Kyiv
+    zone: Europe/Kyiv
+  - name: San Francisco
+    zone: America/Los_Angeles
+  - name: Maui
+    zone: Pacific/Honolulu
 
 # ── Wallpapers ────────────────────────────────────────────────────────────────
-wallpapers_dir = "~/Pictures/wp"
+wallpapers_dir: ~/Pictures/wp
+wallpaper_auto_switch: true
+wallpaper_interval: 10  # minutes
 
 # ── Weather ───────────────────────────────────────────────────────────────────
 # Coordinates for open-meteo.com (decimal degrees).
-weather_lat = "50.0755"
-weather_lon = "14.4378"
+weather_lat: "50.0755"
+weather_lon: "14.4378"
 
 # ── Languages ─────────────────────────────────────────────────────────────────
 # Matched in order against the active Hyprland keymap name (case-insensitive).
 # Leave this section out to use the built-in emoji labels.
-[[languages]]
-match = "english"
-label = "🇺🇸🦅🗽"
-
-[[languages]]
-match = "ukrain"
-label = "🇺🇦 УКР"
-
-[[languages]]
-match = "russian"
-label = "🛡 РДК"
+languages:
+  - match: english
+    label: "🇺🇸🦅🗽"
+  - match: ukrain
+    label: "🇺🇦 УКР"
+  - match: russian
+    label: "🛡 РДК"

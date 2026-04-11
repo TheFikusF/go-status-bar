@@ -194,7 +194,7 @@ func attachHoverPopover(anchor gtk.Widgetter, popover *gtk.Popover, rightClick f
 	})
 	popupMotion.ConnectLeave(func() {
 		overPopup = false
-		scheduleClose(0)
+		scheduleClose(90 * time.Millisecond)
 	})
 	popupArea.(interface{ AddController(gtk.EventControllerer) }).AddController(popupMotion)
 
