@@ -15,6 +15,19 @@ type hyprWorkspace struct {
 	ID int `json:"id"`
 }
 
+type hyprWorkspaceInfo struct {
+	ID      int    `json:"id"`
+	Monitor string `json:"monitor"`
+}
+
+type hyprMonitor struct {
+	ID              int    `json:"id"`
+	Name            string `json:"name"`
+	ActiveWorkspace struct {
+		ID int `json:"id"`
+	} `json:"activeWorkspace"`
+}
+
 type hyprClient struct {
 	Class     string `json:"class"`
 	Title     string `json:"title"`
@@ -36,42 +49,62 @@ type appIconEntry struct {
 	icon        *gio.Icon
 }
 
-func NewWorkspaces() gtk.Widgetter {
+func NewWorkspaces(monitorName string) gtk.Widgetter {
 	box := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	box.SetName("workspaces")
 
 	refresh := func() {
-		output, err := runCommand("hyprctl", "-j", "clients")
+		clientsOut, err := runCommand("hyprctl", "-j", "clients")
 		if err != nil {
 			ui(func() { box.SetVisible(false) })
 			return
 		}
 
 		var clients []hyprClient
-		if err := json.Unmarshal(output, &clients); err != nil {
+		if err := json.Unmarshal(clientsOut, &clients); err != nil {
 			return
 		}
 
-		activeOut, err := runCommand("hyprctl", "-j", "activeworkspace")
-		if err != nil {
-			return
+		wsOut, _ := runCommand("hyprctl", "-j", "workspaces")
+		var allWorkspaces []hyprWorkspaceInfo
+		json.Unmarshal(wsOut, &allWorkspaces)
+
+		monsOut, _ := runCommand("hyprctl", "-j", "monitors")
+		var monitors []hyprMonitor
+		json.Unmarshal(monsOut, &monitors)
+
+		// Find the active workspace for this specific monitor.
+		activeWsID := 0
+		for _, m := range monitors {
+			if monitorName == "" || m.Name == monitorName {
+				activeWsID = m.ActiveWorkspace.ID
+				break
+			}
 		}
 
-		var active hyprWorkspace
-		if err := json.Unmarshal(activeOut, &active); err != nil {
-			return
+		// Build the set of workspace IDs that belong to this monitor.
+		monitorWSIDs := map[int]bool{}
+		for _, ws := range allWorkspaces {
+			if monitorName == "" || ws.Monitor == monitorName {
+				monitorWSIDs[ws.ID] = true
+			}
+		}
+		// Always include the monitor's active workspace (may be empty).
+		if activeWsID > 0 {
+			monitorWSIDs[activeWsID] = true
 		}
 
 		workspaces := map[int][]hyprClient{}
 		for _, client := range clients {
-			if client.Workspace.ID <= 0 {
+			if client.Workspace.ID <= 0 || !monitorWSIDs[client.Workspace.ID] {
 				continue
 			}
 			workspaces[client.Workspace.ID] = append(workspaces[client.Workspace.ID], client)
 		}
-		if active.ID > 0 {
-			if _, ok := workspaces[active.ID]; !ok {
-				workspaces[active.ID] = nil
+		// Ensure every known workspace ID appears (even if empty).
+		for id := range monitorWSIDs {
+			if _, ok := workspaces[id]; !ok {
+				workspaces[id] = nil
 			}
 		}
 
@@ -88,7 +121,7 @@ func NewWorkspaces() gtk.Widgetter {
 				button := gtk.NewButton()
 				button.SetHasFrame(false)
 				button.SetChild(workspaceButtonContent(id, workspaces[id]))
-				if id == active.ID {
+				if id == activeWsID {
 					button.AddCSSClass("active")
 				}
 

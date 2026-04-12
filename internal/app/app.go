@@ -12,9 +12,12 @@ import (
 	"statusbar/internal/modules"
 )
 
+// New creates a status bar window for the given monitor.
+// If monitor is nil the layer shell will pick a monitor automatically.
+
 const userCSSRelativePath = ".config/status-bar/style.css"
 
-func New(application *gtk.Application, defaultCSS string, cssPath string) *gtk.ApplicationWindow {
+func New(application *gtk.Application, defaultCSS string, cssPath string, monitor *gdk.Monitor, monitorName string) *gtk.ApplicationWindow {
 	loadCSS(defaultCSS, cssPath)
 	cfg := config.Load()
 
@@ -27,6 +30,9 @@ func New(application *gtk.Application, defaultCSS string, cssPath string) *gtk.A
 	window.SetName("status-bar")
 
 	initLayerShell(window)
+	if monitor != nil {
+		setLayerShellMonitor(window, monitor)
+	}
 
 	root := gtk.NewCenterBox()
 
@@ -50,8 +56,8 @@ func New(application *gtk.Application, defaultCSS string, cssPath string) *gtk.A
 		}
 	}
 
-	appendIf(left, cfg.Modules.Workspaces, modules.NewWorkspaces())
-	appendIf(left, cfg.Modules.FocusedApp, modules.NewFocusedApp(window))
+	appendIf(left, cfg.Modules.Workspaces, modules.NewWorkspaces(monitorName))
+	appendIf(left, cfg.Modules.FocusedApp, modules.NewFocusedApp(window, monitorName))
 	appendIf(left, cfg.Modules.Music, modules.NewMusic())
 	appendIf(left, cfg.Modules.Mode, modules.NewMode())
 	appendIf(left, cfg.Modules.Scratchpad, modules.NewScratchpad())

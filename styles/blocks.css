@@ -124,6 +124,35 @@ button:hover {
   margin-top: 0;
 }
 
+.focused-app-monitor-column {
+  min-width: 200px;
+  padding: 0 8px;
+}
+
+.focused-app-monitor-column:first-child {
+  padding-left: 0;
+}
+
+.focused-app-monitor-column:last-child {
+  padding-right: 0;
+}
+
+.focused-app-monitor-header {
+  font-size: 11px;
+  font-weight: 900;
+  opacity: 0.5;
+  margin-bottom: 4px;
+}
+
+.focused-app-monitor-column.this-monitor .focused-app-monitor-header {
+  opacity: 1;
+}
+
+.focused-app-monitor-sep {
+  margin: 0 4px;
+  opacity: 0.25;
+}
+
 .focused-app-window-row {
   padding: 1px 0;
 }
@@ -606,7 +635,6 @@ button:hover {
   border: 1px solid white;
   border-radius: 0px;
   background: rgba(0, 0, 0, 0.85);
-  min-width: 240px;
   padding: 12px;
   margin: 0;
 }

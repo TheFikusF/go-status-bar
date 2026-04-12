@@ -15,7 +15,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
-func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
+func NewFocusedApp(win *gtk.ApplicationWindow, monitorName string) gtk.Widgetter {
 	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	box.SetName("focused-app")
 	box.SetVisible(false)
@@ -42,67 +42,105 @@ func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
 	popover.SetAutohide(true)
 	popover.SetParent(box)
 
-	popoverBox := gtk.NewBox(gtk.OrientationVertical, 4)
+	// Horizontal box: one vertical column per monitor.
+	popoverBox := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	popoverBox.SetName("focused-app-menu")
 	popover.SetChild(popoverBox)
 
-	activeWsID := 0
 	popupOpen := false
-
 	popover.ConnectClosed(func() { popupOpen = false })
 
-	// buildPopup runs on the GTK main thread with pre-fetched data.
-	buildPopup := func(wsClients map[int][]hyprClient, ids []int) {
+	type monitorColumn struct {
+		name          string
+		isThisMonitor bool
+		wsIDs         []int
+		wsClients     map[int][]hyprClient
+		activeWsID    int
+	}
+
+	// buildPopup runs on the GTK main thread with pre-fetched column data.
+	buildPopup := func(columns []monitorColumn) {
 		removeChildren(popoverBox)
-		for _, id := range ids {
-			prefix := "  "
-			if id == activeWsID {
-				prefix = "• "
+
+		for i, col := range columns {
+			col := col
+			if i > 0 {
+				sep := gtk.NewSeparator(gtk.OrientationVertical)
+				sep.AddCSSClass("focused-app-monitor-sep")
+				popoverBox.Append(sep)
 			}
-			wsLabel := gtk.NewLabel(fmt.Sprintf("%sWorkspace %d", prefix, id))
-			wsLabel.AddCSSClass("focused-app-ws-header")
-			if id == activeWsID {
-				wsLabel.AddCSSClass("active")
+
+			column := gtk.NewBox(gtk.OrientationVertical, 4)
+			column.AddCSSClass("focused-app-monitor-column")
+			if col.isThisMonitor {
+				column.AddCSSClass("this-monitor")
 			}
-			wsLabel.SetXAlign(0)
-			popoverBox.Append(wsLabel)
 
-			for _, client := range wsClients[id] {
-				client := client
-				row := gtk.NewButton()
-				row.SetHasFrame(false)
-				row.AddCSSClass("focused-app-window-row")
+			monLabel := gtk.NewLabel(col.name)
+			monLabel.AddCSSClass("focused-app-monitor-header")
+			monLabel.SetXAlign(0)
+			column.Append(monLabel)
 
-				inner := gtk.NewBox(gtk.OrientationHorizontal, 6)
-
-				iconImg := gtk.NewImage()
-				iconImg.SetPixelSize(14)
-				if gicon := resolveWindowIcon(client); gicon != nil {
-					iconImg.SetFromGIcon(gicon)
-				} else {
-					iconImg.SetFromIconName("application-x-executable")
+			for _, wsID := range col.wsIDs {
+				wsID := wsID
+				prefix := "  "
+				if wsID == col.activeWsID {
+					prefix = "• "
 				}
-				inner.Append(iconImg)
-
-				title := strings.TrimSpace(client.Title)
-				if title == "" {
-					title = client.Class
+				wsLabel := gtk.NewLabel(fmt.Sprintf("%sWorkspace %d", prefix, wsID))
+				wsLabel.AddCSSClass("focused-app-ws-header")
+				if wsID == col.activeWsID {
+					wsLabel.AddCSSClass("active")
 				}
-				lbl := gtk.NewLabel(title)
-				lbl.SetXAlign(0)
-				lbl.SetEllipsize(pango.EllipsizeEnd)
-				lbl.SetMaxWidthChars(36)
-				inner.Append(lbl)
+				wsLabel.SetXAlign(0)
+				column.Append(wsLabel)
 
-				row.SetChild(inner)
-				row.ConnectClicked(func() {
-					popover.Popdown()
-					runDetached("hyprctl", "dispatch", "workspace", fmt.Sprintf("%d", client.Workspace.ID))
-				})
-				popoverBox.Append(row)
+				for _, client := range col.wsClients[wsID] {
+					client := client
+					row := gtk.NewButton()
+					row.SetHasFrame(false)
+					row.AddCSSClass("focused-app-window-row")
+
+					inner := gtk.NewBox(gtk.OrientationHorizontal, 6)
+
+					iconImg := gtk.NewImage()
+					iconImg.SetPixelSize(14)
+					if gicon := resolveWindowIcon(client); gicon != nil {
+						iconImg.SetFromGIcon(gicon)
+					} else {
+						iconImg.SetFromIconName("application-x-executable")
+					}
+					inner.Append(iconImg)
+
+					title := strings.TrimSpace(client.Title)
+					if title == "" {
+						title = client.Class
+					}
+					lbl := gtk.NewLabel(title)
+					lbl.SetXAlign(0)
+					lbl.SetEllipsize(pango.EllipsizeEnd)
+					lbl.SetMaxWidthChars(36)
+					inner.Append(lbl)
+
+					row.SetChild(inner)
+					row.ConnectClicked(func() {
+						popover.Popdown()
+						runDetached("hyprctl", "dispatch", "workspace", fmt.Sprintf("%d", client.Workspace.ID))
+					})
+					column.Append(row)
+				}
 			}
+
+			if len(col.wsIDs) == 0 {
+				empty := gtk.NewLabel("(empty)")
+				empty.SetXAlign(0)
+				column.Append(empty)
+			}
+
+			popoverBox.Append(column)
 		}
-		if len(ids) == 0 {
+
+		if len(columns) == 0 {
 			empty := gtk.NewLabel("No windows open")
 			empty.SetXAlign(0)
 			popoverBox.Append(empty)
@@ -115,6 +153,8 @@ func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
 		go func() {
 			activeOut, _ := runCommand("hyprctl", "-j", "activewindow")
 			clientsOut, _ := runCommand("hyprctl", "-j", "clients")
+			wsOut, _ := runCommand("hyprctl", "-j", "workspaces")
+			monsOut, _ := runCommand("hyprctl", "-j", "monitors")
 
 			var active hyprClient
 			json.Unmarshal(activeOut, &active)
@@ -122,6 +162,13 @@ func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
 			var clients []hyprClient
 			json.Unmarshal(clientsOut, &clients)
 
+			var allWorkspaces []hyprWorkspaceInfo
+			json.Unmarshal(wsOut, &allWorkspaces)
+
+			var allMonitors []hyprMonitor
+			json.Unmarshal(monsOut, &allMonitors)
+
+			// Map workspace ID → clients.
 			wsClients := map[int][]hyprClient{}
 			for _, c := range clients {
 				if c.Workspace.ID <= 0 {
@@ -129,11 +176,62 @@ func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
 				}
 				wsClients[c.Workspace.ID] = append(wsClients[c.Workspace.ID], c)
 			}
-			ids := make([]int, 0, len(wsClients))
-			for id := range wsClients {
-				ids = append(ids, id)
+
+			// Map monitor name → sorted workspace IDs.
+			monitorWS := map[string][]int{}
+			for _, ws := range allWorkspaces {
+				monitorWS[ws.Monitor] = append(monitorWS[ws.Monitor], ws.ID)
 			}
-			sort.Ints(ids)
+
+			// Map monitor name → active workspace ID.
+			monActiveWS := map[string]int{}
+			for _, m := range allMonitors {
+				monActiveWS[m.Name] = m.ActiveWorkspace.ID
+				// Include the active (possibly empty) workspace in the list.
+				aid := m.ActiveWorkspace.ID
+				if aid > 0 {
+					found := false
+					for _, id := range monitorWS[m.Name] {
+						if id == aid {
+							found = true
+							break
+						}
+					}
+					if !found {
+						monitorWS[m.Name] = append(monitorWS[m.Name], aid)
+					}
+				}
+			}
+
+			for mn := range monitorWS {
+				sort.Ints(monitorWS[mn])
+			}
+
+			// Collect monitor names sorted: this monitor first, rest alphabetically.
+			monNames := make([]string, 0, len(allMonitors))
+			for _, m := range allMonitors {
+				monNames = append(monNames, m.Name)
+			}
+			sort.Slice(monNames, func(i, j int) bool {
+				if monNames[i] == monitorName {
+					return true
+				}
+				if monNames[j] == monitorName {
+					return false
+				}
+				return monNames[i] < monNames[j]
+			})
+
+			columns := make([]monitorColumn, 0, len(monNames))
+			for _, mn := range monNames {
+				columns = append(columns, monitorColumn{
+					name:          mn,
+					isThisMonitor: mn == monitorName,
+					wsIDs:         monitorWS[mn],
+					wsClients:     wsClients,
+					activeWsID:    monActiveWS[mn],
+				})
+			}
 
 			ui(func() {
 				if active.Class == "" {
@@ -141,7 +239,6 @@ func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
 					return
 				}
 				box.SetVisible(true)
-				activeWsID = active.Workspace.ID
 				wsNumLabel.SetLabel(fmt.Sprintf("%d", active.Workspace.ID))
 				if gicon := resolveWindowIcon(active); gicon != nil {
 					appIcon.SetFromGIcon(gicon)
@@ -155,7 +252,7 @@ func NewFocusedApp(win *gtk.ApplicationWindow) gtk.Widgetter {
 				titleLabel.SetLabel(title)
 
 				if popupOpen {
-					buildPopup(wsClients, ids)
+					buildPopup(columns)
 				}
 			})
 		}()

@@ -15,15 +15,27 @@ static void statusbar_init_layer_shell(GtkWindow* win) {
 	gtk_layer_auto_exclusive_zone_enable(win);
 	gtk_layer_set_keyboard_mode(win, GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
 }
+
+static void statusbar_set_monitor(GtkWindow* win, GdkMonitor* monitor) {
+	gtk_layer_set_monitor(win, monitor);
+}
 */
 import "C"
 
 import (
 	"unsafe"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
 func initLayerShell(window *gtk.ApplicationWindow) {
 	C.statusbar_init_layer_shell((*C.GtkWindow)(unsafe.Pointer(window.Native())))
+}
+
+func setLayerShellMonitor(window *gtk.ApplicationWindow, monitor *gdk.Monitor) {
+	C.statusbar_set_monitor(
+		(*C.GtkWindow)(unsafe.Pointer(window.Native())),
+		(*C.GdkMonitor)(unsafe.Pointer(monitor.Native())),
+	)
 }
