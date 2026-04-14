@@ -498,12 +498,44 @@ button:hover {
 }
 
 
+#pipewire,
+#network,
+#bluetooth {
+  min-height: 0;
+  margin-right: 0;
+  transition: none;
+}
+
+#network {
+  border-bottom: 3px solid #2980b9;
+  border-left: none;
+  border-radius: 0 24px 24px 0;
+
+  background: rgba(41, 128, 185, 0.50);
+  padding-left: 6px;
+  padding-right: 8px;
+  margin-right: 4px;
+}
+
+#bluetooth {
+  border-bottom: 3px solid #8e7dff;
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+
+  background: rgba(122, 92, 255, 0.50);
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 #pipewire {
   border-bottom: 3px solid #f1c40f;
-  min-height: 0;
+  border-right: none;
+  border-radius: 24px 0 0 24px;
+
+  background: rgba(241, 196, 15, 0.50);
   padding-left: 8px;
-  padding-right: 8px;
-  transition: none;
+  padding-right: 6px;
 }
 
 #pipewire label {
@@ -521,12 +553,16 @@ button:hover {
   border-bottom: 3px solid #90b1b1;
 }
 
-#network {
-  border-bottom: 3px solid #2980b9;
-}
-
 #network.disconnected {
   border-bottom: 3px solid #f53c3c;
+}
+
+#bluetooth.off {
+  border-bottom: 3px solid #90b1b1;
+}
+
+#bluetooth.connected {
+  border-bottom: 3px solid #7bed9f;
 }
 
 #power-profiles-daemon.performance {
@@ -544,6 +580,7 @@ button:hover {
 
 #cpu {
   background: rgba(28, 126, 69, 0.666);
+  min-width: 48px;
   border-radius: 24px 0 0 24px;
   margin-right: 0;
   padding-right: 4px;
@@ -552,6 +589,7 @@ button:hover {
 
 #memory {
   background: rgba(79, 45, 92, 0.666);
+  min-width: 48px;
   border-radius: 0;
   margin-right: 0;
   padding-left: 4px;
@@ -562,6 +600,7 @@ button:hover {
 
 #temperature {
   background: rgba(104, 64, 18, 0.666);
+  min-width: 48px;
   border-radius: 0 24px 24px 0;
   padding-left: 4px;
   border-left: 0px;
@@ -624,6 +663,7 @@ button:hover {
 #world-clock-menu,
 #weather-menu,
 #audio-menu,
+#bluetooth-menu,
 #workspace-popup,
 #wallpaper-menu,
 #clipboard-menu,
@@ -651,6 +691,7 @@ button:hover {
 #clipboard-menu-title,
 #language-menu-title,
 #audio-menu-title,
+#bluetooth-menu-title,
 #wifi-menu-title {
   font-size: 15px;
   font-weight: 900;
@@ -687,19 +728,28 @@ button:hover {
   margin-top: 4px;
 }
 
-.wifi-title-row {
+.wifi-title-row,
+.bluetooth-title-row {
   margin-bottom: 4px;
   align-items: center;
 }
 
+.bluetooth-status-row {
+  opacity: 0.8;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 .audio-device-row,
-.wifi-network-row {
+.wifi-network-row,
+.bluetooth-device-row {
   font-size: 13px;
   padding: 1px 0;
 }
 
 .audio-device-row.active,
 .wifi-network-row.active,
+.bluetooth-device-row.active,
 .wallpaper-choice-row.active {
   color: #f1c40f;
   font-weight: 900;

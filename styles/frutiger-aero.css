@@ -1,6 +1,6 @@
-/* ═══════════════════════════════════════════════════════════
+/* ===========================================================
    Frutiger Aero — Windows 7 inspired glassmorphism theme
-   ═══════════════════════════════════════════════════════════ */
+   =========================================================== */
 
 * {
   font-family: "Segoe UI", "Cantarell", "Noto Sans", "Symbols Nerd Font Mono", sans-serif;
@@ -50,6 +50,7 @@ button:hover {
 #pulseaudio,
 #pipewire,
 #network,
+#bluetooth,
 #power-profiles-daemon,
 #cpu,
 #memory,
@@ -651,13 +652,21 @@ button:hover {
   opacity: 0.9;
 }
 
-/* ── pipewire / audio ───────────────────────────────────── */
+/* ── pipewire / audio / network / bluetooth ─────────────── */
+#pipewire,
+#network,
+#bluetooth {
+  min-height: 0;
+  transition: none;
+}
+
 #pipewire {
   border-bottom: 2px solid rgba(255, 200, 60, 0.8);
-  min-height: 0;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
   padding-left: 8px;
-  padding-right: 8px;
-  transition: none;
+  padding-right: 6px;
+  margin-right: 0;
 }
 
 #pipewire label {
@@ -675,13 +684,35 @@ button:hover {
   border-bottom: 2px solid rgba(160, 180, 190, 0.6);
 }
 
-/* ── network ────────────────────────────────────────────── */
 #network {
   border-bottom: 2px solid rgba(60, 160, 240, 0.8);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  padding-left: 6px;
+  padding-right: 8px;
+  margin-right: 4px;
 }
 
 #network.disconnected {
   border-bottom: 2px solid rgba(240, 80, 80, 0.8);
+}
+
+#bluetooth {
+  border-bottom: 2px solid rgba(142, 125, 255, 0.85);
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+  margin-right: 0;
+}
+
+#bluetooth.off {
+  border-bottom: 2px solid rgba(160, 180, 190, 0.6);
+}
+
+#bluetooth.connected {
+  border-bottom: 2px solid rgba(120, 235, 159, 0.85);
 }
 
 /* ── power profiles ─────────────────────────────────────── */
@@ -728,6 +759,7 @@ button:hover {
     0 1px 3px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-right: none;
+  min-width: 48px;
 }
 
 #memory {
@@ -749,6 +781,7 @@ button:hover {
     0 1px 3px rgba(0, 0, 0, 0.25);
   border-top: 1px solid rgba(255, 255, 255, 0.45);
   border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+  min-width: 48px;
 }
 
 #temperature {
@@ -767,6 +800,7 @@ button:hover {
     0 1px 3px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-left: none;
+  min-width: 48px;
 }
 
 #temperature.critical {
@@ -894,6 +928,7 @@ button:hover {
 #world-clock-menu,
 #weather-menu,
 #audio-menu,
+#bluetooth-menu,
 #workspace-popup,
 #wallpaper-menu,
 #clipboard-menu,
@@ -928,6 +963,7 @@ button:hover {
 #wallpaper-menu-title,
 #clipboard-menu-title,
 #audio-menu-title,
+#bluetooth-menu-title,
 #wifi-menu-title {
   font-size: 15px;
   font-weight: 700;
@@ -973,19 +1009,28 @@ button:hover {
   margin-top: 4px;
 }
 
-.wifi-title-row {
+.wifi-title-row,
+.bluetooth-title-row {
   margin-bottom: 4px;
   align-items: center;
 }
 
+.bluetooth-status-row {
+  opacity: 0.8;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 .audio-device-row,
-.wifi-network-row {
+.wifi-network-row,
+.bluetooth-device-row {
   font-size: 13px;
   padding: 1px 8px;
 }
 
 .audio-device-row.active,
 .wifi-network-row.active,
+.bluetooth-device-row.active,
 .wallpaper-choice-row.active {
   color: #90d4ff;
   font-weight: 700;

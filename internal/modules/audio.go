@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"statusbar/internal/config"
+
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
 type audioDevice struct {
@@ -27,16 +28,23 @@ type audioSnapshot struct {
 	Inputs  []audioDevice
 }
 
-func NewPipewire() gtk.Widgetter {
+func NewPipewire(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("pipewire")
-	module.Label.SetLabel("  0%  ")
-	module.Label.SetWidthChars(9)
-	module.Label.SetMaxWidthChars(9)
-	module.Label.SetXAlign(0.5)
-	module.Label.SetSingleLineMode(true)
-	module.Label.SetWrap(false)
-	module.Label.SetEllipsize(pango.EllipsizeEnd)
+	removeChildren(module.Box)
 	module.Box.SetVisible(true)
+
+	// Show icon and text together
+	iconTextBox := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	volumeIcon := gtk.NewImageFromIconName("audio-volume-high-symbolic")
+	micIcon := gtk.NewImageFromIconName("microphone-sensitivity-high-symbolic")
+	valueLabel := gtk.NewLabel("")
+	valueLabel.SetXAlign(0)
+	iconTextBox.Append(volumeIcon)
+	if cfg.Audio.ShowText {
+		iconTextBox.Append(valueLabel)
+	}
+	iconTextBox.Append(micIcon)
+	module.Box.Append(iconTextBox)
 
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
@@ -78,7 +86,14 @@ func NewPipewire() gtk.Widgetter {
 
 	openMixer := func() {
 		popover.Popdown()
-		runDetached("flatpak", "run", "com.saivert.pwvucontrol")
+		onClickCmd := "flatpak run com.saivert.pwvucontrol"
+		if cfg != nil && cfg.Audio.OnClick != "" {
+			onClickCmd = cfg.Audio.OnClick
+		}
+		parts := strings.Fields(onClickCmd)
+		if len(parts) > 0 {
+			runDetached(parts[0], parts[1:]...)
+		}
 	}
 	attachHoverPopover(module.Box, popover, openMixer, nil)
 	attachScroll(module.Box, func() {
@@ -93,13 +108,32 @@ func NewPipewire() gtk.Widgetter {
 		for range refreshRequests {
 			snapshot := readAudioSnapshot()
 			ui(func() {
-				setTextModule(module, snapshot.Text)
+				percent, muted, _ := readPulseDeviceVolume(false, "@DEFAULT_SINK@")
+				volIcon := "audio-volume-high-symbolic"
+				switch {
+				case muted:
+					volIcon = "audio-volume-muted-symbolic"
+				case percent == 0:
+					volIcon = "audio-volume-muted-symbolic"
+				case percent < 35:
+					volIcon = "audio-volume-low-symbolic"
+				case percent < 70:
+					volIcon = "audio-volume-medium-symbolic"
+				}
+				volumeIcon.SetFromIconName(volIcon)
+				// Optionally, update mic icon based on input mute/level (not implemented here)
+				micIcon.SetFromIconName("microphone-sensitivity-high-symbolic")
+				// Update label with volume percent if enabled
+				if cfg.Audio.ShowText {
+					valueLabel.SetLabel(fmt.Sprintf("%3d%%", percent))
+				} else {
+					valueLabel.SetLabel("")
+				}
 				if snapshot.Muted {
 					module.Box.AddCSSClass("muted")
 				} else {
 					module.Box.RemoveCSSClass("muted")
 				}
-
 				if !adjustingSlider {
 					renderAudioDeviceList(outputList, snapshot.Outputs, requestRefresh, func() {
 						adjustingSlider = true

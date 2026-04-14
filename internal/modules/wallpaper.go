@@ -54,13 +54,23 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 	button.SetTooltipText("Shuffle wallpaper")
 	// Track the active wallpaper filename; seed from hyprpaper on startup.
 	currentWallpaper := filepath.Base(readCurrentWallpaper())
-	wpDir := cfg.WallpapersDir
+	wpDir := cfg.Wallpaper.Dir
 
 	// Auto-switch state from config
-	autoEnabled := cfg.WallpaperAutoSwitch
-	autoInterval := time.Duration(cfg.WallpaperInterval) * time.Minute
+	autoEnabled := cfg.Wallpaper.AutoSwitch
+	autoInterval := time.Duration(cfg.Wallpaper.Interval) * time.Minute
 	if autoInterval < 1*time.Minute {
 		autoInterval = 10 * time.Minute
+	}
+	// On-click command for wallpaper
+	onClickCmd := cfg.Wallpaper.OnClick
+	if onClickCmd != "" {
+		button.ConnectClicked(func() {
+			parts := strings.Fields(onClickCmd)
+			if len(parts) > 0 {
+				runDetached(parts[0], parts[1:]...)
+			}
+		})
 	}
 	var autoTimer *time.Timer
 

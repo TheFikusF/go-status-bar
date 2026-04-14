@@ -70,17 +70,16 @@ func New(application *gtk.Application, defaultCSS string, cssPath string, monito
 	appendIf(right, cfg.Modules.Wallpaper, modules.NewWallpaper(cfg))
 	appendIf(right, cfg.Modules.Clipboard, modules.NewClipboard())
 	appendIf(right, cfg.Modules.Weather, modules.NewWeather(cfg))
-	appendIf(right, cfg.Modules.Pipewire, modules.NewPipewire())
-	appendIf(right, cfg.Modules.Network, modules.NewNetwork())
+	appendIf(right, cfg.Modules.Pipewire, modules.NewPipewire(cfg))
+	appendIf(right, cfg.Modules.Bluetooth, modules.NewBluetooth(cfg))
+	appendIf(right, cfg.Modules.Network, modules.NewNetwork(cfg))
 	appendIf(right, cfg.Modules.PowerProfile, modules.NewPowerProfile())
 	appendIf(right, cfg.Modules.CPU, modules.NewCPU())
 	appendIf(right, cfg.Modules.Memory, modules.NewMemory())
 	appendIf(right, cfg.Modules.Temperature, modules.NewTemperature())
 	appendIf(right, cfg.Modules.KeyboardState, modules.NewKeyboardState())
 	appendIf(right, cfg.Modules.Language, modules.NewLanguage(cfg))
-	if cfg.Modules.Battery {
-		right.Append(modules.NewBattery("BAT0", "battery"))
-	}
+	appendIf(right, cfg.Modules.Battery, modules.NewBattery("BAT0", "battery"))
 	appendIf(right, cfg.Modules.Tray, modules.NewTray())
 	appendIf(right, cfg.Modules.Power, modules.NewPower())
 

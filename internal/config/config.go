@@ -34,6 +34,7 @@ type Modules struct {
 	Weather       bool `yaml:"weather"`
 	Pipewire      bool `yaml:"pipewire"`
 	Network       bool `yaml:"network"`
+	Bluetooth     bool `yaml:"bluetooth"`
 	PowerProfile  bool `yaml:"power_profile"`
 	CPU           bool `yaml:"cpu"`
 	Memory        bool `yaml:"memory"`
@@ -45,16 +46,53 @@ type Modules struct {
 	Power         bool `yaml:"power"`
 }
 
+type WeatherConfig struct {
+	Lat      string `yaml:"lat"`
+	Lon      string `yaml:"lon"`
+	Location string `yaml:"location"`
+	OnClick  string `yaml:"on_click"`
+}
+
+type WallpaperConfig struct {
+	Dir        string `yaml:"dir"`
+	AutoSwitch bool   `yaml:"auto_switch"`
+	Interval   int    `yaml:"interval"`
+	OnClick    string `yaml:"on_click"`
+}
+
+type AudioConfig struct {
+	OnClick string `yaml:"on_click"`
+	ShowText bool   `yaml:"show_text"`
+}
+
+type NetworkConfig struct {
+	OnClick string `yaml:"on_click"`
+	ShowText bool   `yaml:"show_text"`
+}
+
+type BluetoothConfig struct {
+	ShowText bool `yaml:"show_text"`
+}
+
+type ClocksConfig struct {
+	OnClick string `yaml:"on_click"`
+}
+
+type CalendarConfig struct {
+	OnClick string `yaml:"on_click"`
+}
+
 type Config struct {
-	Modules             Modules         `yaml:"modules"`
-	WorldClocks         []WorldClock    `yaml:"world_clocks"`
-	WallpapersDir       string          `yaml:"wallpapers_dir"`
-	WallpaperAutoSwitch bool            `yaml:"wallpaper_auto_switch"`
-	WallpaperInterval   int             `yaml:"wallpaper_interval"`
-	WeatherLat          string          `yaml:"weather_lat"`
-	WeatherLon          string          `yaml:"weather_lon"`
-	WeatherLocation     string          `yaml:"weather_location"`
-	Languages           []LanguageEntry `yaml:"languages"`
+	Modules     Modules         `yaml:"modules"`
+	WorldClocks []WorldClock    `yaml:"world_clocks"`
+	Wallpaper   WallpaperConfig `yaml:"wallpaper"`
+	Weather     WeatherConfig   `yaml:"weather"`
+	Audio       AudioConfig     `yaml:"audio"`
+	Network     NetworkConfig   `yaml:"network"`
+	Bluetooth   BluetoothConfig `yaml:"bluetooth"`
+	Clocks      ClocksConfig    `yaml:"clocks"`
+	Calendar    CalendarConfig  `yaml:"calendar"`
+	Languages   []LanguageEntry `yaml:"languages"`
 }
 
 func defaultConfig() Config {
@@ -72,6 +110,7 @@ func defaultConfig() Config {
 			Weather:       true,
 			Pipewire:      true,
 			Network:       true,
+			Bluetooth:     true,
 			PowerProfile:  false,
 			CPU:           true,
 			Memory:        true,
@@ -90,12 +129,32 @@ func defaultConfig() Config {
 			{Name: "San Francisco", Zone: "America/Los_Angeles"},
 			{Name: "Maui", Zone: "Pacific/Honolulu"},
 		},
-		WallpapersDir:       filepath.Join(mustHomeDir(), "Pictures", "wp"),
-		WallpaperAutoSwitch: true,
-		WallpaperInterval:   10,
-		WeatherLat:          "50.0755",
-		WeatherLon:          "14.4378",
-		Languages:           nil, // nil = use built-in formatLanguage logic
+		Wallpaper: WallpaperConfig{
+			Dir:        filepath.Join(mustHomeDir(), "Pictures", "wp"),
+			AutoSwitch: true,
+			Interval:   10,
+			OnClick:    "some-wallpaper-app",
+		},
+		Weather: WeatherConfig{
+			Lat:      "50.0755",
+			Lon:      "14.4378",
+			Location: "Prague",
+			OnClick:  "gnome-weather",
+		},
+		Audio: AudioConfig{
+			OnClick: "flatpak run com.saivert.pwvucontrol",
+		},
+		Network: NetworkConfig{
+			OnClick: "nm-connection-editor",
+		},
+		Bluetooth: BluetoothConfig{},
+		Clocks: ClocksConfig{
+			OnClick: "gnome-clocks",
+		},
+		Calendar: CalendarConfig{
+			OnClick: "gnome-calendar",
+		},
+		Languages: nil, // nil = use built-in formatLanguage logic
 	}
 }
 
@@ -131,9 +190,9 @@ func Load() *Config {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		log.Printf("config: parse %s: %v", path, err)
 	}
-	// Expand leading ~ in paths.
-	if strings.HasPrefix(cfg.WallpapersDir, "~/") {
-		cfg.WallpapersDir = filepath.Join(mustHomeDir(), cfg.WallpapersDir[2:])
+	// Expand leading ~ in wallpaper dir path.
+	if strings.HasPrefix(cfg.Wallpaper.Dir, "~/") {
+		cfg.Wallpaper.Dir = filepath.Join(mustHomeDir(), cfg.Wallpaper.Dir[2:])
 	}
 	return &cfg
 }

@@ -498,12 +498,37 @@ button:hover {
 }
 
 
+#pipewire,
+#network,
+#bluetooth {
+  min-height: 0;
+  margin-right: 0;
+  transition: none;
+}
+
+#network {
+  border-bottom: 1px solid #2980b9;
+  background: rgba(41, 128, 185, 0.30);
+  border-radius: 0px;
+  padding-left: 8px;
+  padding-right: 6px;
+}
+
+#bluetooth {
+  border-bottom: 1px solid #8e7dff;
+  background: rgba(122, 92, 255, 0.26);
+  border-radius: 0px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 #pipewire {
   border-bottom: 1px solid #f1c40f;
-  min-height: 0;
-  padding-left: 8px;
+  background: rgba(241, 196, 15, 0.22);
+  border-radius: 0px;
+  padding-left: 6px;
   padding-right: 8px;
-  transition: none;
+  margin-right: 4px;
 }
 
 #pipewire label {
@@ -521,12 +546,16 @@ button:hover {
   border-bottom: 1px solid #90b1b1;
 }
 
-#network {
-  border-bottom: 1px solid #2980b9;
-}
-
 #network.disconnected {
   border-bottom: 1px solid #f53c3c;
+}
+
+#bluetooth.off {
+  border-bottom: 1px solid #90b1b1;
+}
+
+#bluetooth.connected {
+  border-bottom: 1px solid #7bed9f;
 }
 
 #power-profiles-daemon.performance {
@@ -624,6 +653,7 @@ button:hover {
 #world-clock-menu,
 #weather-menu,
 #audio-menu,
+#bluetooth-menu,
 #workspace-popup,
 #wallpaper-menu,
 #clipboard-menu,
@@ -650,6 +680,7 @@ button:hover {
 #language-menu-title,
 #clipboard-menu-title,
 #audio-menu-title,
+#bluetooth-menu-title,
 #wifi-menu-title {
   font-size: 15px;
   font-weight: 900;
@@ -686,19 +717,28 @@ button:hover {
   margin-top: 4px;
 }
 
-.wifi-title-row {
+.wifi-title-row,
+.bluetooth-title-row {
   margin-bottom: 4px;
   align-items: center;
 }
 
+.bluetooth-status-row {
+  opacity: 0.8;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 .audio-device-row,
-.wifi-network-row {
+.wifi-network-row,
+.bluetooth-device-row {
   font-size: 13px;
   padding: 1px 0;
 }
 
 .audio-device-row.active,
 .wifi-network-row.active,
+.bluetooth-device-row.active,
 .wallpaper-choice-row.active {
   color: #f1c40f;
   font-weight: 900;

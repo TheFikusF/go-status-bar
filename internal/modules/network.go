@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"statusbar/internal/config"
+
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -23,8 +25,20 @@ type networkSnapshot struct {
 	Networks          []wifiNetwork
 }
 
-func NewNetwork() gtk.Widgetter {
+func NewNetwork(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("network")
+	removeChildren(module.Box)
+	module.Box.SetVisible(true)
+	// Remove label, use icon widget instead
+	iconBox := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	signalIcon := gtk.NewImageFromIconName("network-wireless-signal-excellent-symbolic")
+	valueLabel := gtk.NewLabel("")
+	valueLabel.SetXAlign(0)
+	iconBox.Append(signalIcon)
+	if cfg.Network.ShowText {
+		iconBox.Append(valueLabel)
+	}
+	module.Box.Append(iconBox)
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
 	popover.SetHasArrow(false)
@@ -49,7 +63,16 @@ func NewNetwork() gtk.Widgetter {
 	listBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(listBox)
 
-	attachHoverPopover(module.Box, popover, nil, nil)
+	onClickCmd := "nm-connection-editor"
+	if cfg != nil && cfg.Network.OnClick != "" {
+		onClickCmd = cfg.Network.OnClick
+	}
+	parts := strings.Fields(onClickCmd)
+	attachHoverPopover(module.Box, popover, func() {
+		if len(parts) > 0 {
+			runDetached(parts[0], parts[1:]...)
+		}
+	}, nil)
 	refreshRequests := make(chan struct{}, 1)
 	requestRefresh := func() {
 		select {
@@ -76,7 +99,40 @@ func NewNetwork() gtk.Widgetter {
 		for range refreshRequests {
 			snapshot := readNetworkSnapshot()
 			ui(func() {
-				setTextModule(module, snapshot.Text)
+				// Set icon based on best signal strength
+				bestSignal := 0
+				bestSSID := ""
+				for _, n := range snapshot.Networks {
+					if n.Signal > bestSignal {
+						bestSignal = n.Signal
+						bestSSID = n.SSID
+					}
+				}
+				iconName := "network-wireless-signal-none-symbolic"
+				switch {
+				case bestSignal >= 80:
+					iconName = "network-wireless-signal-excellent-symbolic"
+				case bestSignal >= 60:
+					iconName = "network-wireless-signal-good-symbolic"
+				case bestSignal >= 40:
+					iconName = "network-wireless-signal-ok-symbolic"
+				case bestSignal > 0:
+					iconName = "network-wireless-signal-weak-symbolic"
+				}
+				signalIcon.SetFromIconName(iconName)
+				// Update label with SSID or status if enabled
+				if cfg.Network.ShowText {
+					if bestSSID != "" {
+						valueLabel.SetLabel(bestSSID)
+					} else if snapshot.Disconnected {
+						valueLabel.SetLabel("Disconnected")
+					} else {
+						valueLabel.SetLabel("")
+					}
+				} else {
+					valueLabel.SetLabel("")
+				}
+
 				if snapshot.Disconnected {
 					module.Box.AddCSSClass("disconnected")
 				} else {

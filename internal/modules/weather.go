@@ -41,8 +41,8 @@ func NewWeather(cfg *config.Config) gtk.Widgetter {
 	popover.SetChild(menu)
 
 	titleText := "Weather"
-	if cfg.WeatherLocation != "" {
-		titleText = "Weather — " + cfg.WeatherLocation
+	if cfg.Weather.Location != "" {
+		titleText = "Weather — " + cfg.Weather.Location
 	}
 	title := gtk.NewLabel(titleText)
 	title.SetName("weather-menu-title")
@@ -68,7 +68,7 @@ func NewWeather(cfg *config.Config) gtk.Widgetter {
 
 	go func() {
 		for range refreshRequests {
-			snapshot := readWeatherSnapshot(cfg.WeatherLat, cfg.WeatherLon)
+			snapshot := readWeatherSnapshot(cfg.Weather.Lat, cfg.Weather.Lon)
 			ui(func() {
 				setTextModule(module, snapshot.CurrentText)
 				for i := range forecastRows {
@@ -84,7 +84,16 @@ func NewWeather(cfg *config.Config) gtk.Widgetter {
 		}
 	}()
 
-	attachHoverPopover(module.Box, popover, func() { runDetached("gnome-weather") }, nil)
+	onClickCmd := cfg.Weather.OnClick
+	if onClickCmd == "" {
+		onClickCmd = "gnome-weather"
+	}
+	attachHoverPopover(module.Box, popover, func() {
+		parts := strings.Fields(onClickCmd)
+		if len(parts) > 0 {
+			runDetached(parts[0], parts[1:]...)
+		}
+	}, nil)
 	requestRefresh()
 	startPolling(30*time.Minute, func() {
 		requestRefresh()

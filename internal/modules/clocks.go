@@ -2,6 +2,7 @@ package modules
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"statusbar/internal/config"
@@ -77,7 +78,16 @@ func NewDateClock() gtk.Widgetter {
 		}
 	}
 
-	attachHoverPopover(module.Box, popover, func() { runDetached("gnome-calendar") }, nil)
+	// Use config if available for calendar
+	onClickCmd := "gnome-calendar"
+	// NOTE: Pass cfg from caller for consistency
+	// If you want to use config, pass it as argument
+	attachHoverPopover(module.Box, popover, func() {
+		parts := strings.Fields(onClickCmd)
+		if len(parts) > 0 {
+			runDetached(parts[0], parts[1:]...)
+		}
+	}, nil)
 	// State for displayed month/year
 	type monthState struct {
 		year  int
@@ -187,7 +197,16 @@ func NewTimeClock(cfg *config.Config) gtk.Widgetter {
 		rows = append(rows, row)
 	}
 
-	attachHoverPopover(module.Box, popover, func() { runDetached("gnome-clocks") }, nil)
+	onClickCmd := "gnome-clocks"
+	if cfg != nil && cfg.Clocks.OnClick != "" {
+		onClickCmd = cfg.Clocks.OnClick
+	}
+	attachHoverPopover(module.Box, popover, func() {
+		parts := strings.Fields(onClickCmd)
+		if len(parts) > 0 {
+			runDetached(parts[0], parts[1:]...)
+		}
+	}, nil)
 	startPolling(time.Second, func() {
 		now := time.Now()
 		localText := now.Format("15:04")

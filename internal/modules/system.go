@@ -66,7 +66,7 @@ func (c *cpuSampler) read() string {
 	}
 
 	usage := 100 * float64(totalDelta-idleDelta) / float64(totalDelta)
-	return fmt.Sprintf("%.0f%% ", usage)
+	return fmt.Sprintf("%2.0f%% ", usage)
 }
 
 func NewMemory() gtk.Widgetter {
@@ -102,7 +102,7 @@ func readMemory() string {
 	}
 
 	used := 100 * float64(total-available) / float64(total)
-	return fmt.Sprintf("%.0f%% ", used)
+	return fmt.Sprintf("%2.0f%% ", used)
 }
 
 func NewTemperature() gtk.Widgetter {
@@ -147,7 +147,7 @@ func readTemperature() string {
 		return ""
 	}
 	if maxC >= 80 {
-		return fmt.Sprintf("%.0f°C ", maxC)
+		return fmt.Sprintf("%2.0f°C ", maxC)
 	}
-	return fmt.Sprintf("%.0f°C ", maxC)
+	return fmt.Sprintf("%2.0f°C ", maxC)
 }

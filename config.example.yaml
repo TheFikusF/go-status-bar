@@ -19,6 +19,7 @@ modules:
   weather: true
   pipewire: true
   network: true
+  bluetooth: true
   power_profile: false
   cpu: true
   memory: true
@@ -44,16 +45,46 @@ world_clocks:
   - name: Maui
     zone: Pacific/Honolulu
 
-# ── Wallpapers ────────────────────────────────────────────────────────────────
-wallpapers_dir: ~/Pictures/wp
-wallpaper_auto_switch: true
-wallpaper_interval: 10  # minutes
+
+# ── Wallpaper ─────────────────────────────────────────────────────────────────
+wallpaper:
+  dir: ~/Pictures/wp
+  auto_switch: true
+  interval: 10  # minutes
+  on_click: some-wallpaper-app
+
+
 
 # ── Weather ───────────────────────────────────────────────────────────────────
 # Coordinates for open-meteo.com (decimal degrees).
-weather_lat: "49.1951"
-weather_lon: "16.6068"
-weather_location: Brno
+weather:
+  lat: "49.1951"
+  lon: "16.6068"
+  location: Brno
+  on_click: gnome-weather
+
+
+# ── Audio ─────────────────────────────────────────────────────────────────────
+audio:
+  on_click: pavucontrol
+  show_text: false
+
+# ── Network ───────────────────────────────────────────────────────────────────
+network:
+  on_click: nm-connection-editor
+  show_text: false
+
+# ── Bluetooth ─────────────────────────────────────────────────────────────────
+bluetooth:
+  show_text: false
+
+# ── Clocks ────────────────────────────────────────────────────────────────────
+clocks:
+  on_click: gnome-clocks
+
+# ── Calendar ──────────────────────────────────────────────────────────────────
+calendar:
+  on_click: gnome-calendar
 
 # ── Languages ─────────────────────────────────────────────────────────────────
 # Matched in order against the active Hyprland keymap name (case-insensitive).
