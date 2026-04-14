@@ -1,4 +1,4 @@
-<img width="1920" height="46" alt="image" src="https://github.com/user-attachments/assets/ff2cdee6-297f-4c94-af7e-c2cd32bd7f5e" />
+<img width="1920" height="45" alt="image" src="https://github.com/user-attachments/assets/332c2b77-f927-4ed1-9dc0-f8d4df284c3d" />
 
 # go-status-bar
 
@@ -7,71 +7,16 @@
 
 A custom GTK4 layer-shell status bar written in Go.
 
-## What it does
-
-- Spawns one bar per connected monitor.
-- Uses GTK CSS themes, with the default style embedded from `styles/bar.css`.
-- Organizes modules into left, center, and right groups.
-- Mixes simple system widgets with interactive popups for audio, Wi‑Fi, Bluetooth, weather, wallpaper, clipboard, power, and more.
-- Favors direct shell integration over big framework dependencies.
-
-## Current modules
-
-The bar can enable or disable modules through config. The current set is:
-
-- workspaces
-- focused app
-- music
-- mode
-- scratchpad
-- date clock
-- time clock
-- notifications
-- mpd
-- wallpaper
-- clipboard
-- weather
-- pipewire / audio
-- network
-- bluetooth
-- power profile
-- cpu
-- memory
-- temperature
-- keyboard state
-- language
-- battery
-- tray
-- power menu
-
-Some modules are passive status indicators, but several are interactive:
-
-- `time_clock` opens a world-clock popup.
-- `date_clock` opens a calendar popup.
-- `weather` shows a 7-day forecast popup.
-- `pipewire` shows output/input devices and sliders.
-- `network` shows a Wi‑Fi list and networking toggle.
-- `bluetooth` shows discovered devices, power state, and connect/disconnect actions.
-- `wallpaper` can shuffle wallpapers and manage auto-switching.
-- `clipboard`, `language`, `tray`, and `power` all have their own popups.
-
 ## Run
 
-Run the bar with the embedded default CSS:
+Run the bar via one of the commands bellow:
 
 ```bash
 go run .
-```
 
-or run the built binary:
-
-```bash
 ./statusbar
-```
 
-To load a specific CSS file, use the `--css` flag:
-
-```bash
+# add --css to select specific styles file
 ./statusbar --css ./styles/frutiger-aero.css
 ```
 
@@ -145,7 +90,3 @@ If one of those tools is missing, the corresponding module may show degraded out
 - It spawns a separate window for each detected monitor connector.
 - Weather data comes from Open-Meteo.
 - The battery widget falls back to AC-style behavior on systems without a battery.
-
-## Hyprland-specific behavior
-
-The focused-app module can temporarily show workspace information while the Super key is held, and several left-side modules depend on `hyprctl` data being available.
