@@ -755,6 +755,68 @@ button:hover {
   font-weight: 900;
 }
 
+.wifi-info-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.wifi-info-title,
+.wifi-info-empty {
+  opacity: 0.75;
+  font-size: 12px;
+}
+
+.wifi-info-group {
+  margin-top: 4px;
+}
+
+.wifi-info-toggle {
+  padding: 0;
+}
+
+.wifi-info-toggle:hover {
+  box-shadow: none;
+}
+
+.wifi-info-expander {
+  opacity: 0.72;
+}
+
+.wifi-info-group.expanded .wifi-info-expander {
+  opacity: 1;
+}
+
+.wifi-info-heading {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.wifi-info-subtitle {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.wifi-info-row {
+  align-items: flex-start;
+  padding: 1px 0;
+}
+
+.wifi-info-label,
+.wifi-info-value {
+  font-size: 12px;
+}
+
+.wifi-info-label {
+  opacity: 0.75;
+}
+
+.wifi-info-copy {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+}
+
 .language-row {
   font-size: 15px;
   padding: 6px 12px;

@@ -147,13 +147,14 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 	}
 
 	var lastItemsKey string
+	var trayPopups []*Popup
 	retryCount := 0
 	refresh := func() {
 		items, needsRetry := readTrayItems(conn, watcher)
 		key := trayItemsKey(items)
 		if key != lastItemsKey {
 			lastItemsKey = key
-			ui(func() { renderTrayItems(container, conn, items) })
+			ui(func() { trayPopups = renderTrayItems(container, conn, items, trayPopups) })
 		}
 
 		if needsRetry {
@@ -407,15 +408,24 @@ func readTrayItemProperties(obj dbus.BusObject) (map[string]dbus.Variant, bool) 
 	return nil, false
 }
 
-func renderTrayItems(container *gtk.Box, conn *dbus.Conn, items []trayItem) {
+func renderTrayItems(container *gtk.Box, conn *dbus.Conn, items []trayItem, oldPopups []*Popup) []*Popup {
+	for _, p := range oldPopups {
+		p.Destroy()
+	}
 	removeChildren(container)
 	container.SetVisible(len(items) > 0)
+	popups := make([]*Popup, 0, len(items))
 	for _, item := range items {
-		container.Append(newTrayItemWidget(conn, item))
+		btn, p := newTrayItemWidget(conn, item)
+		container.Append(btn)
+		if p != nil {
+			popups = append(popups, p)
+		}
 	}
+	return popups
 }
 
-func newTrayItemWidget(conn *dbus.Conn, item trayItem) gtk.Widgetter {
+func newTrayItemWidget(conn *dbus.Conn, item trayItem) (gtk.Widgetter, *Popup) {
 	button := gtk.NewButton()
 	button.SetHasFrame(false)
 	button.AddCSSClass("tray-item")
@@ -469,9 +479,9 @@ func newTrayItemWidget(conn *dbus.Conn, item trayItem) gtk.Widgetter {
 		}()
 	}
 
-	attachHoverPopover(button, menu, nil, openMenu)
+	p := attachHoverPopover(button, menu, nil, openMenu)
 
-	return button
+	return button, p
 }
 
 func fetchDBusMenuNodes(conn *dbus.Conn, item trayItem) ([]dbusMenuNode, bool) {

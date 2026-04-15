@@ -53,6 +53,8 @@ func NewWorkspaces(monitorName string) gtk.Widgetter {
 	box := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	box.SetName("workspaces")
 
+	var wsPopups []*Popup
+
 	refresh := func() {
 		clientsOut, err := runCommand("hyprctl", "-j", "clients")
 		if err != nil {
@@ -115,6 +117,12 @@ func NewWorkspaces(monitorName string) gtk.Widgetter {
 		sort.Ints(ids)
 
 		ui(func() {
+			// Destroy old popups before removing their anchor widgets.
+			for _, p := range wsPopups {
+				p.Destroy()
+			}
+			wsPopups = wsPopups[:0]
+
 			removeChildren(box)
 			box.SetVisible(len(ids) > 0)
 			for _, id := range ids {
@@ -155,7 +163,8 @@ func NewWorkspaces(monitorName string) gtk.Widgetter {
 				}
 
 				// Update popover before open
-				attachHoverPopover(button, popover, nil, updatePopover)
+				p := attachHoverPopover(button, popover, nil, updatePopover)
+				wsPopups = append(wsPopups, p)
 
 				workspaceID := id
 				button.ConnectClicked(func() {

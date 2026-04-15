@@ -258,13 +258,13 @@ func NewFocusedApp(win *gtk.ApplicationWindow, monitorName string) gtk.Widgetter
 		}()
 	}
 
-	_, setHeld := attachHoverPopover(box, popover, nil, func() {
+	popup := attachHoverPopover(box, popover, nil, func() {
 		popupOpen = true
 		refresh()
 	})
 
 	refresh()
-	watchSuperKey(setHeld)
+	watchSuperKey(popup.SetHeld)
 
 	go func() {
 		for event := range subscribeHyprEvents() {

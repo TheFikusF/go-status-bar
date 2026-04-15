@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"statusbar/internal/config"
 
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -180,8 +182,41 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 
 	updateControls()
 
+	// Thumbnail cache: load each wallpaper thumbnail once, reuse across opens.
+	var thumbCacheMu sync.Mutex
+	thumbCache := map[string]*gdkpixbuf.Pixbuf{}
+
+	loadThumbnail := func(path string) *gdkpixbuf.Pixbuf {
+		thumbCacheMu.Lock()
+		if pb, ok := thumbCache[path]; ok {
+			thumbCacheMu.Unlock()
+			return pb
+		}
+		thumbCacheMu.Unlock()
+
+		pb, err := gdkpixbuf.NewPixbufFromFileAtScale(path, 48, 48, true)
+		if err != nil {
+			return nil
+		}
+
+		thumbCacheMu.Lock()
+		thumbCache[path] = pb
+		thumbCacheMu.Unlock()
+		return pb
+	}
+
+	// Track images created in the popover so we can clear their paintables
+	// before removing widgets, releasing GPU/pixbuf memory immediately.
+	var liveImages []*gtk.Picture
+
 	// Function to update popover content
 	updatePopover := func() {
+		// Clear paintables on old images to release texture memory.
+		for _, img := range liveImages {
+			img.SetPaintable(nil)
+		}
+		liveImages = liveImages[:0]
+
 		// Clear previous children
 		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
 			listBox.Remove(child)
@@ -197,8 +232,8 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 
 		// Build rows immediately with just labels (no images yet)
 		type wpRow struct {
-			inner *gtk.Box
-			name  string
+			pic  *gtk.Picture
+			name string
 		}
 		var rows []wpRow
 		for _, file := range files {
@@ -216,10 +251,11 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 
 			inner := gtk.NewBox(gtk.OrientationHorizontal, 8)
 
-			// Placeholder for image
-			placeholder := gtk.NewBox(gtk.OrientationHorizontal, 0)
-			placeholder.SetSizeRequest(48, 48)
-			inner.Append(placeholder)
+			pic := gtk.NewPicture()
+			pic.SetContentFit(gtk.ContentFitContain)
+			pic.SetCanShrink(true)
+			pic.SetSizeRequest(48, 48)
+			inner.Append(pic)
 
 			label := gtk.NewLabel(name)
 			label.SetHAlign(gtk.AlignStart)
@@ -244,24 +280,21 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 				}(name)
 			})
 			listBox.Append(row)
-			rows = append(rows, wpRow{inner: inner, name: name})
+			liveImages = append(liveImages, pic)
+			rows = append(rows, wpRow{pic: pic, name: name})
 		}
 
-		// Load images in background and swap placeholders
+		// Load thumbnails in background and assign to pictures
 		go func() {
 			for _, r := range rows {
 				imgPath := filepath.Join(dir, r.name)
-				inner := r.inner
-				ui(func() {
-					first := inner.FirstChild()
-					img := gtk.NewImageFromFile(imgPath)
-					img.SetPixelSize(48)
-					img.SetVAlign(gtk.AlignCenter)
-					inner.InsertChildAfter(img, nil)
-					if first != nil {
-						inner.Remove(first)
-					}
-				})
+				pic := r.pic
+				pb := loadThumbnail(imgPath)
+				if pb != nil {
+					ui(func() {
+						pic.SetPixbuf(pb)
+					})
+				}
 			}
 		}()
 	}
