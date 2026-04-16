@@ -55,7 +55,14 @@ func NewMusic() gtk.Widgetter {
 	cover.SetCanShrink(true)
 	cover.SetContentFit(gtk.ContentFitCover)
 	cover.SetSizeRequest(22, 22)
+
+	coverPlayIcon := gtk.NewImageFromIconName("media-playback-pause-symbolic")
+	coverPlayIcon.SetMarginEnd(8)
+	coverPlayIcon.SetMarginStart(8)
+	coverPlayIcon.SetPixelSize(16)
+
 	coverShell.Append(cover)
+	coverShell.Append(coverPlayIcon)
 
 	textShell := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	textShell.SetName("custom-music-text")
@@ -311,10 +318,12 @@ func NewMusic() gtk.Widgetter {
 					lastCoverURL = info.ArtURL
 					if info.ArtURL != "" {
 						cover.SetFile(gio.NewFileForURI(info.ArtURL))
-						coverShell.SetVisible(true)
+						cover.SetVisible(true)
+						coverPlayIcon.SetVisible(false)
 					} else {
 						cover.SetPaintable(nil)
-						coverShell.SetVisible(false)
+						cover.SetVisible(false)
+						coverPlayIcon.SetVisible(true)
 					}
 				}
 
@@ -323,11 +332,13 @@ func NewMusic() gtk.Widgetter {
 					coverShell.AddCSSClass("playing")
 					textShell.AddCSSClass("playing")
 					playPauseButton.SetLabel("󰏥")
+					coverPlayIcon.SetFromIconName("media-playback-pause-symbolic")
 				} else {
 					box.RemoveCSSClass("playing")
 					coverShell.RemoveCSSClass("playing")
 					textShell.RemoveCSSClass("playing")
 					playPauseButton.SetLabel("󰐊")
+					coverPlayIcon.SetFromIconName("media-playback-start-symbolic")
 				}
 
 				titleLabel.SetLabel(strings.TrimSpace(info.Title))

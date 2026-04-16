@@ -94,9 +94,29 @@ button:hover {
   margin-top: 4px;
   margin-bottom: 0;
   border-radius: 0px;
-  padding: 0 10px 0 0;
+  padding: 0;
+  background-color: transparent;
+}
+
+#focused-app-badge,
+#focused-app-text {
   background-color: rgba(0, 0, 0, 0.5);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.75);
+}
+
+#focused-app-badge {
+  border: 1px solid white;
+  border-radius: 0px;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+#focused-app-text {
+  border-radius: 0px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border-left: 0;
+  padding: 0 10px;
 }
 
 .focused-app-ws-badge {
@@ -105,7 +125,6 @@ button:hover {
   padding: 0 7px;
   font-size: 20px;
   font-weight: 900;
-  border: 1px solid white;
 }
 
 .focused-app-ws-header {
@@ -290,7 +309,7 @@ button:hover {
 }
 
 #music-menu-artist {
-  opacity: 0.666;
+  opacity: 0.7;
   margin-top: 1px;
   margin-bottom: 6px;
   min-width: 0;
@@ -332,7 +351,7 @@ button:hover {
 }
 
 #music-menu-slider slider:active {
-  opacity: 0.666;
+  opacity: 0.7;
 }
 
 #music-menu-progress-row {
@@ -407,7 +426,7 @@ button:hover {
 }
 
 #music-menu-cava {
-  opacity: 0.666;
+  opacity: 0.7;
   margin: 0;
   padding: 0;
 }
@@ -572,7 +591,7 @@ button:hover {
 }
 
 #cpu {
-  background: rgba(28, 126, 69, 0.666);
+  background: rgba(28, 126, 69, 0.7);
   border-radius: 0px;
   margin-right: 0;
   padding-right: 4px;
@@ -580,7 +599,7 @@ button:hover {
 }
 
 #memory {
-  background: rgba(79, 45, 92, 0.666);
+  background: rgba(79, 45, 92, 0.7);
   border-radius: 0px;
   margin-right: 0;
   padding-left: 4px;
@@ -590,7 +609,7 @@ button:hover {
 }
 
 #temperature {
-  background: rgba(104, 64, 18, 0.666);
+  background: rgba(104, 64, 18, 0.7);
   border-radius: 0px;
   padding-left: 4px;
   border-left: 0px;
@@ -661,7 +680,8 @@ button:hover {
 #language-menu,
 #power-menu,
 #wifi-menu,
-#focused-app-menu {
+#focused-app-menu,
+#battery-popup {
   border: 1px solid white;
   border-radius: 0px;
   background: rgba(0, 0, 0, 0.85);

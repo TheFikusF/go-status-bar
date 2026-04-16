@@ -61,12 +61,12 @@ type WallpaperConfig struct {
 }
 
 type AudioConfig struct {
-	OnClick string `yaml:"on_click"`
+	OnClick  string `yaml:"on_click"`
 	ShowText bool   `yaml:"show_text"`
 }
 
 type NetworkConfig struct {
-	OnClick string `yaml:"on_click"`
+	OnClick  string `yaml:"on_click"`
 	ShowText bool   `yaml:"show_text"`
 }
 
@@ -82,17 +82,28 @@ type CalendarConfig struct {
 	OnClick string `yaml:"on_click"`
 }
 
+type BatteryConfig struct {
+	ShowText bool `yaml:"show_text"`
+}
+
+type FocusedAppConfig struct {
+	ShowEmptyWorkspace bool   `yaml:"show_empty_workspace"`
+	EmptyText          string `yaml:"empty_text"`
+}
+
 type Config struct {
-	Modules     Modules         `yaml:"modules"`
-	WorldClocks []WorldClock    `yaml:"world_clocks"`
-	Wallpaper   WallpaperConfig `yaml:"wallpaper"`
-	Weather     WeatherConfig   `yaml:"weather"`
-	Audio       AudioConfig     `yaml:"audio"`
-	Network     NetworkConfig   `yaml:"network"`
-	Bluetooth   BluetoothConfig `yaml:"bluetooth"`
-	Clocks      ClocksConfig    `yaml:"clocks"`
-	Calendar    CalendarConfig  `yaml:"calendar"`
-	Languages   []LanguageEntry `yaml:"languages"`
+	Modules     Modules          `yaml:"modules"`
+	WorldClocks []WorldClock     `yaml:"world_clocks"`
+	Wallpaper   WallpaperConfig  `yaml:"wallpaper"`
+	Weather     WeatherConfig    `yaml:"weather"`
+	Audio       AudioConfig      `yaml:"audio"`
+	Network     NetworkConfig    `yaml:"network"`
+	Bluetooth   BluetoothConfig  `yaml:"bluetooth"`
+	Clocks      ClocksConfig     `yaml:"clocks"`
+	Calendar    CalendarConfig   `yaml:"calendar"`
+	Battery     BatteryConfig    `yaml:"battery_config"`
+	FocusedApp  FocusedAppConfig `yaml:"focused_app_config"`
+	Languages   []LanguageEntry  `yaml:"languages"`
 }
 
 func defaultConfig() Config {
@@ -153,6 +164,13 @@ func defaultConfig() Config {
 		},
 		Calendar: CalendarConfig{
 			OnClick: "gnome-calendar",
+		},
+		Battery: BatteryConfig{
+			ShowText: true,
+		},
+		FocusedApp: FocusedAppConfig{
+			ShowEmptyWorkspace: true,
+			EmptyText:          "Desktop",
 		},
 		Languages: nil, // nil = use built-in formatLanguage logic
 	}

@@ -78,6 +78,15 @@ network:
 bluetooth:
   show_text: false
 
+# ── Battery ───────────────────────────────────────────────────────────────────
+battery_config:
+  show_text: true  # show percentage text next to icon
+
+# ── Focused App ───────────────────────────────────────────────────────────────
+focused_app_config:
+  show_empty_workspace: true  # show workspace number + placeholder on empty desktops
+  empty_text: "- empty -"          # text shown on empty workspace (leave blank to hide)
+
 # ── Clocks ────────────────────────────────────────────────────────────────────
 clocks:
   on_click: gnome-clocks

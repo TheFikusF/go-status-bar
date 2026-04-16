@@ -13,15 +13,28 @@ import (
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
+
+	"statusbar/internal/config"
 )
 
-func NewFocusedApp(win *gtk.ApplicationWindow, monitorName string) gtk.Widgetter {
-	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
+func NewFocusedApp(cfg *config.Config, win *gtk.ApplicationWindow, monitorName string) gtk.Widgetter {
+	showEmpty := cfg.FocusedApp.ShowEmptyWorkspace
+	emptyText := cfg.FocusedApp.EmptyText
+
+	box := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	box.SetName("focused-app")
 	box.SetVisible(false)
 
+	// Workspace badge shell (independent box for styling).
+	badgeShell := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	badgeShell.SetName("focused-app-badge")
 	wsNumLabel := gtk.NewLabel("")
 	wsNumLabel.AddCSSClass("focused-app-ws-badge")
+	badgeShell.Append(wsNumLabel)
+
+	// Text shell: icon + title (can be styled thinner).
+	textShell := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	textShell.SetName("focused-app-text")
 
 	appIcon := gtk.NewImage()
 	appIcon.SetPixelSize(14)
@@ -32,9 +45,11 @@ func NewFocusedApp(win *gtk.ApplicationWindow, monitorName string) gtk.Widgetter
 	titleLabel.SetMaxWidthChars(32)
 	titleLabel.SetXAlign(0)
 
-	box.Append(wsNumLabel)
-	box.Append(appIcon)
-	box.Append(titleLabel)
+	textShell.Append(appIcon)
+	textShell.Append(titleLabel)
+
+	box.Append(badgeShell)
+	box.Append(textShell)
 
 	popover := gtk.NewPopover()
 	popover.AddCSSClass("status-popup")
@@ -235,21 +250,40 @@ func NewFocusedApp(win *gtk.ApplicationWindow, monitorName string) gtk.Widgetter
 
 			ui(func() {
 				if active.Class == "" {
-					box.SetVisible(false)
-					return
-				}
-				box.SetVisible(true)
-				wsNumLabel.SetLabel(fmt.Sprintf("%d", active.Workspace.ID))
-				if gicon := resolveWindowIcon(active); gicon != nil {
-					appIcon.SetFromGIcon(gicon)
+					if showEmpty {
+						box.SetVisible(true)
+						activeWsID := monActiveWS[monitorName]
+						if activeWsID > 0 {
+							wsNumLabel.SetLabel(fmt.Sprintf("%d", activeWsID))
+						} else {
+							wsNumLabel.SetLabel("—")
+						}
+						if emptyText != "" {
+							titleLabel.SetLabel(emptyText)
+							textShell.SetVisible(true)
+						} else {
+							textShell.SetVisible(false)
+						}
+						appIcon.SetVisible(false)
+					} else {
+						box.SetVisible(false)
+					}
 				} else {
-					appIcon.SetFromIconName("application-x-executable")
+					box.SetVisible(true)
+					wsNumLabel.SetLabel(fmt.Sprintf("%d", active.Workspace.ID))
+					if gicon := resolveWindowIcon(active); gicon != nil {
+						appIcon.SetFromGIcon(gicon)
+					} else {
+						appIcon.SetFromIconName("application-x-executable")
+					}
+					title := strings.TrimSpace(active.Title)
+					if title == "" {
+						title = active.Class
+					}
+					titleLabel.SetLabel(title)
+					appIcon.SetVisible(true)
+					textShell.SetVisible(true)
 				}
-				title := strings.TrimSpace(active.Title)
-				if title == "" {
-					title = active.Class
-				}
-				titleLabel.SetLabel(title)
 
 				if popupOpen {
 					buildPopup(columns)

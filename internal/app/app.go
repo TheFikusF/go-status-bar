@@ -57,7 +57,7 @@ func New(application *gtk.Application, defaultCSS string, cssPath string, monito
 	}
 
 	appendIf(left, cfg.Modules.Workspaces, modules.NewWorkspaces(monitorName))
-	appendIf(left, cfg.Modules.FocusedApp, modules.NewFocusedApp(window, monitorName))
+	appendIf(left, cfg.Modules.FocusedApp, modules.NewFocusedApp(cfg, window, monitorName))
 	appendIf(left, cfg.Modules.Music, modules.NewMusic())
 	appendIf(left, cfg.Modules.Mode, modules.NewMode())
 	appendIf(left, cfg.Modules.Scratchpad, modules.NewScratchpad())
@@ -79,7 +79,7 @@ func New(application *gtk.Application, defaultCSS string, cssPath string, monito
 	appendIf(right, cfg.Modules.Temperature, modules.NewTemperature())
 	appendIf(right, cfg.Modules.KeyboardState, modules.NewKeyboardState())
 	appendIf(right, cfg.Modules.Language, modules.NewLanguage(cfg))
-	appendIf(right, cfg.Modules.Battery, modules.NewBattery("BAT0", "battery"))
+	appendIf(right, cfg.Modules.Battery, modules.NewBattery(cfg, "BAT0", "battery"))
 	appendIf(right, cfg.Modules.Tray, modules.NewTray())
 	appendIf(right, cfg.Modules.Power, modules.NewPower())
 
