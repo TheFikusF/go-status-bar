@@ -1,10 +1,12 @@
 package services
 
 import (
+	"context"
 	"encoding/xml"
 	"log"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -318,8 +320,10 @@ func discoverStatusNotifierItemPaths(conn *dbus.Conn, busName string) []dbus.Obj
 }
 
 func introspectNode(conn *dbus.Conn, busName string, objectPath dbus.ObjectPath) (introspect.Node, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	var xmlData string
-	err := conn.Object(busName, objectPath).Call("org.freedesktop.DBus.Introspectable.Introspect", 0).Store(&xmlData)
+	err := conn.Object(busName, objectPath).CallWithContext(ctx, "org.freedesktop.DBus.Introspectable.Introspect", 0).Store(&xmlData)
 	if err != nil {
 		return introspect.Node{}, err
 	}
@@ -481,7 +485,7 @@ func MaybeStartEmbeddedWatcher(preRegisteredHostName string) {
 		log.Printf("tray/watcher: could not subscribe to NameOwnerChanged: %v", err)
 	}
 
-	signals := make(chan *dbus.Signal, 32)
+	signals := make(chan *dbus.Signal, 256)
 	conn.Signal(signals)
 
 	log.Printf("tray/watcher: started (org.kde.StatusNotifierWatcher)")

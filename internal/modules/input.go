@@ -141,8 +141,9 @@ func NewLanguage(cfg *config.Config) gtk.Widgetter {
 	}
 
 	refresh()
+	hyprCh, _ := subscribeHyprEvents()
 	go func() {
-		for event := range subscribeHyprEvents() {
+		for event := range hyprCh {
 			if event.Name == "activelayout" {
 				if _, layout, ok := strings.Cut(event.Data, ","); ok {
 					ui(func() {

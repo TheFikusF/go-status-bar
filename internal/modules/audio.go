@@ -28,6 +28,17 @@ type audioSnapshot struct {
 	Inputs  []audioDevice
 }
 
+type audioDeviceRowState struct {
+	root         *gtk.Box
+	button       *gtk.Button
+	buttonLabel  *gtk.Label
+	slider       *gtk.Scale
+	valueLabel   *gtk.Label
+	muteLabel    *gtk.Label
+	device       audioDevice
+	initializing bool
+}
+
 func NewPipewire(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("pipewire")
 	removeChildren(module.Box)
@@ -67,6 +78,11 @@ func NewPipewire(cfg *config.Config) gtk.Widgetter {
 	menu.Append(outputTitle)
 	outputList := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(outputList)
+	outputEmpty := gtk.NewLabel("No devices found")
+	outputEmpty.AddCSSClass("audio-device-row")
+	outputEmpty.SetXAlign(0)
+	outputEmpty.SetVisible(false)
+	outputList.Append(outputEmpty)
 
 	inputTitle := gtk.NewLabel("Inputs")
 	inputTitle.AddCSSClass("audio-menu-section")
@@ -74,9 +90,17 @@ func NewPipewire(cfg *config.Config) gtk.Widgetter {
 	menu.Append(inputTitle)
 	inputList := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(inputList)
+	inputEmpty := gtk.NewLabel("No devices found")
+	inputEmpty.AddCSSClass("audio-device-row")
+	inputEmpty.SetXAlign(0)
+	inputEmpty.SetVisible(false)
+	inputList.Append(inputEmpty)
 
 	refreshRequests := make(chan struct{}, 1)
 	var adjustingSlider bool
+	var popupVisible bool
+	var outputRows []*audioDeviceRowState
+	var inputRows []*audioDeviceRowState
 	requestRefresh := func() {
 		select {
 		case refreshRequests <- struct{}{}:
@@ -95,7 +119,13 @@ func NewPipewire(cfg *config.Config) gtk.Widgetter {
 			runDetached(parts[0], parts[1:]...)
 		}
 	}
-	attachHoverPopover(module.Box, popover, openMixer, nil)
+	popup := attachHoverPopover(module.Box, popover, openMixer, func() {
+		popupVisible = true
+		requestRefresh()
+	})
+	popup.SetAfterClose(func() {
+		popupVisible = false
+	})
 	attachScroll(module.Box, func() {
 		adjustDefaultSinkVolume(5)
 		time.AfterFunc(150*time.Millisecond, requestRefresh)
@@ -134,13 +164,13 @@ func NewPipewire(cfg *config.Config) gtk.Widgetter {
 				} else {
 					module.Box.RemoveCSSClass("muted")
 				}
-				if !adjustingSlider {
-					renderAudioDeviceList(outputList, snapshot.Outputs, requestRefresh, func() {
+				if !adjustingSlider && popupVisible {
+					renderAudioDeviceList(outputList, outputEmpty, &outputRows, snapshot.Outputs, requestRefresh, func() {
 						adjustingSlider = true
 					}, func() {
 						adjustingSlider = false
 					})
-					renderAudioDeviceList(inputList, snapshot.Inputs, requestRefresh, func() {
+					renderAudioDeviceList(inputList, inputEmpty, &inputRows, snapshot.Inputs, requestRefresh, func() {
 						adjustingSlider = true
 					}, func() {
 						adjustingSlider = false
@@ -216,38 +246,46 @@ func formatAudioDevice(device audioDevice) string {
 	return "  " + device.Name
 }
 
-func renderAudioDeviceList(parent *gtk.Box, devices []audioDevice, requestRefresh func(), beginAdjust func(), endAdjust func()) {
-	removeChildren(parent)
-
+func renderAudioDeviceList(parent *gtk.Box, empty *gtk.Label, rows *[]*audioDeviceRowState, devices []audioDevice, requestRefresh func(), beginAdjust func(), endAdjust func()) {
 	if len(devices) == 0 {
-		row := gtk.NewLabel("No devices found")
-		row.AddCSSClass("audio-device-row")
-		row.SetXAlign(0)
-		parent.Append(row)
+		empty.SetVisible(true)
+		for _, row := range *rows {
+			row.root.SetVisible(false)
+		}
 		return
 	}
 
-	for _, device := range devices {
-		parent.Append(newAudioDeviceRow(device, requestRefresh, beginAdjust, endAdjust))
+	empty.SetVisible(false)
+	for len(*rows) < len(devices) {
+		row := newAudioDeviceRowState(requestRefresh, beginAdjust, endAdjust)
+		row.root.SetVisible(false)
+		parent.Append(row.root)
+		*rows = append(*rows, row)
+	}
+
+	for i, device := range devices {
+		row := (*rows)[i]
+		row.update(device)
+		row.root.SetVisible(true)
+	}
+	for i := len(devices); i < len(*rows); i++ {
+		(*rows)[i].root.SetVisible(false)
 	}
 }
 
-func newAudioDeviceRow(device audioDevice, requestRefresh func(), beginAdjust func(), endAdjust func()) gtk.Widgetter {
-	row := gtk.NewBox(gtk.OrientationVertical, 2)
-	row.AddCSSClass("audio-device-row")
-	if device.IsDefault {
-		row.AddCSSClass("active")
-	}
+func newAudioDeviceRowState(requestRefresh func(), beginAdjust func(), endAdjust func()) *audioDeviceRowState {
+	row := &audioDeviceRowState{}
+	row.root = gtk.NewBox(gtk.OrientationVertical, 2)
+	row.root.AddCSSClass("audio-device-row")
 
-	button := gtk.NewButtonWithLabel(formatAudioDevice(device))
-	button.SetHasFrame(false)
-	button.AddCSSClass("audio-device-button")
-	if child := button.Child(); child != nil {
-		if lbl, ok := child.(*gtk.Label); ok {
-			lbl.SetXAlign(0)
-		}
-	}
-	button.ConnectClicked(func() {
+	row.button = gtk.NewButton()
+	row.button.SetHasFrame(false)
+	row.button.AddCSSClass("audio-device-button")
+	row.buttonLabel = gtk.NewLabel("")
+	row.buttonLabel.SetXAlign(0)
+	row.button.SetChild(row.buttonLabel)
+	row.button.ConnectClicked(func() {
+		device := row.device
 		if device.IsInput {
 			runDetached("pactl", "set-default-source", strconv.Itoa(device.ID))
 		} else {
@@ -255,30 +293,26 @@ func newAudioDeviceRow(device audioDevice, requestRefresh func(), beginAdjust fu
 		}
 		time.AfterFunc(150*time.Millisecond, requestRefresh)
 	})
-	row.Append(button)
+	row.root.Append(row.button)
 
 	sliderRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	sliderRow.AddCSSClass("audio-slider-row")
 
-	slider := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
-	slider.SetDrawValue(false)
-	slider.SetHExpand(true)
-	slider.AddCSSClass("audio-device-slider")
+	row.slider = gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
+	row.slider.SetDrawValue(false)
+	row.slider.SetHExpand(true)
+	row.slider.AddCSSClass("audio-device-slider")
+	row.valueLabel = gtk.NewLabel("")
+	row.valueLabel.AddCSSClass("audio-device-volume")
+	row.valueLabel.SetXAlign(1)
 
-	value := gtk.NewLabel(fmt.Sprintf("%d%%", device.Volume))
-	value.AddCSSClass("audio-device-volume")
-	value.SetXAlign(1)
-
-	initializing := true
-	slider.SetValue(float64(device.Volume))
-	initializing = false
-
-	slider.ConnectValueChanged(func() {
-		if initializing {
+	row.slider.ConnectValueChanged(func() {
+		if row.initializing {
 			return
 		}
-		volume := int(clamp(slider.Value(), 0, 100))
-		value.SetLabel(fmt.Sprintf("%d%%", volume))
+		volume := int(clamp(row.slider.Value(), 0, 100))
+		row.valueLabel.SetLabel(fmt.Sprintf("%d%%", volume))
+		device := row.device
 		if device.IsInput {
 			runDetached("pactl", "set-source-volume", strconv.Itoa(device.ID), fmt.Sprintf("%d%%", volume))
 		} else {
@@ -299,20 +333,33 @@ func newAudioDeviceRow(device audioDevice, requestRefresh func(), beginAdjust fu
 		}
 		time.AfterFunc(80*time.Millisecond, requestRefresh)
 	})
-	slider.AddController(sliderGesture)
+	row.slider.AddController(sliderGesture)
 
-	sliderRow.Append(slider)
-	sliderRow.Append(value)
-	row.Append(sliderRow)
+	sliderRow.Append(row.slider)
+	sliderRow.Append(row.valueLabel)
+	row.root.Append(sliderRow)
 
-	if device.Muted {
-		muteLabel := gtk.NewLabel("Muted")
-		muteLabel.AddCSSClass("audio-device-muted")
-		muteLabel.SetXAlign(0)
-		row.Append(muteLabel)
-	}
+	row.muteLabel = gtk.NewLabel("Muted")
+	row.muteLabel.AddCSSClass("audio-device-muted")
+	row.muteLabel.SetXAlign(0)
+	row.root.Append(row.muteLabel)
 
 	return row
+}
+
+func (row *audioDeviceRowState) update(device audioDevice) {
+	row.device = device
+	row.buttonLabel.SetLabel(formatAudioDevice(device))
+	row.initializing = true
+	row.slider.SetValue(float64(device.Volume))
+	row.initializing = false
+	row.valueLabel.SetLabel(fmt.Sprintf("%d%%", device.Volume))
+	row.muteLabel.SetVisible(device.Muted)
+	if device.IsDefault {
+		row.root.AddCSSClass("active")
+	} else {
+		row.root.RemoveCSSClass("active")
+	}
 }
 
 func readDefaultPulseDevices() (string, string) {

@@ -53,7 +53,67 @@ func NewWorkspaces(monitorName string) gtk.Widgetter {
 	box := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	box.SetName("workspaces")
 
-	var wsPopups []*Popup
+	// Pool of workspace buttons keyed by workspace ID.
+	// Buttons are reused across refreshes to avoid C-side widget leaks.
+	type wsEntry struct {
+		button     *gtk.Button
+		popup      *Popup
+		popover    *gtk.Popover
+		content    *gtk.Box
+		contentKey string // cache key to avoid rebuilding unchanged content
+	}
+	wsPool := map[int]*wsEntry{}
+
+	// clientsKey builds a string key from the client list for change detection.
+	clientsKey := func(clients []hyprClient) string {
+		var b strings.Builder
+		for _, c := range clients {
+			b.WriteString(c.Class)
+			b.WriteByte('|')
+			b.WriteString(c.Title)
+			b.WriteByte(';')
+		}
+		return b.String()
+	}
+
+	getOrCreate := func(id int, clients []hyprClient) *wsEntry {
+		key := clientsKey(clients)
+		if entry, ok := wsPool[id]; ok {
+			// Only rebuild child widget if clients changed.
+			if entry.contentKey != key {
+				entry.button.SetChild(workspaceButtonContent(id, clients))
+				entry.contentKey = key
+			}
+			return entry
+		}
+		button := gtk.NewButton()
+		button.SetHasFrame(false)
+		button.SetChild(workspaceButtonContent(id, clients))
+
+		popover := gtk.NewPopover()
+		popover.AddCSSClass("status-popup")
+		popover.SetHasArrow(false)
+		popover.SetAutohide(true)
+		popover.SetParent(button)
+		content := gtk.NewBox(gtk.OrientationVertical, 4)
+		content.SetName("workspace-popup")
+		popover.SetChild(content)
+
+		updatePopover := func() {
+			// Placeholder; real content set via SetBeforeOpen on each refresh.
+		}
+
+		p := attachHoverPopover(button, popover, nil, updatePopover)
+
+		workspaceID := id
+		button.ConnectClicked(func() {
+			runDetached("hyprctl", "dispatch", "workspace", fmt.Sprintf("%d", workspaceID))
+		})
+
+		entry := &wsEntry{button: button, popup: p, popover: popover, content: content, contentKey: key}
+		wsPool[id] = entry
+		return entry
+	}
 
 	refresh := func() {
 		clientsOut, err := runCommand("hyprctl", "-j", "clients")
@@ -117,69 +177,68 @@ func NewWorkspaces(monitorName string) gtk.Widgetter {
 		sort.Ints(ids)
 
 		ui(func() {
-			// Destroy old popups before removing their anchor widgets.
-			for _, p := range wsPopups {
-				p.Destroy()
+			// Build the set of IDs we need.
+			needed := make(map[int]bool, len(ids))
+			for _, id := range ids {
+				needed[id] = true
 			}
-			wsPopups = wsPopups[:0]
 
-			removeChildren(box)
+			// Remove pool entries that are no longer needed.
+			for id, entry := range wsPool {
+				if !needed[id] {
+					entry.popup.Destroy()
+					entry.button.Unparent()
+					delete(wsPool, id)
+				}
+			}
+
+			// Detach all buttons from box (re-append in sorted order).
+			for _, entry := range wsPool {
+				if entry.button.Parent() != nil {
+					box.Remove(entry.button)
+				}
+			}
+
 			box.SetVisible(len(ids) > 0)
 			for _, id := range ids {
-				button := gtk.NewButton()
-				button.SetHasFrame(false)
-				button.SetChild(workspaceButtonContent(id, workspaces[id]))
-				if id == activeWsID {
-					button.AddCSSClass("active")
-				}
+				wsClients := workspaces[id]
+				entry := getOrCreate(id, wsClients)
 
-				// Create popover for window titles
-				popover := gtk.NewPopover()
-				popover.AddCSSClass("status-popup")
-				popover.SetHasArrow(false)
-				popover.SetAutohide(true)
-				popover.SetParent(button)
-
-				// Function to update popover content
-				updatePopover := func() {
-					vbox := gtk.NewBox(gtk.OrientationVertical, 4)
-					vbox.SetName("workspace-popup")
-
-					clients := workspaces[id]
-					if len(clients) == 0 {
+				// Update popover content lazily — store clients for beforeOpen.
+				currentClients := wsClients
+				entry.popup.SetBeforeOpen(func() {
+					removeChildren(entry.content)
+					if len(currentClients) == 0 {
 						label := gtk.NewLabel("(empty)")
-						vbox.Append(label)
+						entry.content.Append(label)
 					} else {
-						for _, client := range clients {
+						for _, client := range currentClients {
 							title := strings.TrimSpace(client.Title)
 							if title == "" {
 								title = "(untitled)"
 							}
 							label := gtk.NewLabel(title)
-							vbox.Append(label)
+							entry.content.Append(label)
 						}
 					}
-					popover.SetChild(vbox)
-				}
-
-				// Update popover before open
-				p := attachHoverPopover(button, popover, nil, updatePopover)
-				wsPopups = append(wsPopups, p)
-
-				workspaceID := id
-				button.ConnectClicked(func() {
-					runDetached("hyprctl", "dispatch", "workspace", fmt.Sprintf("%d", workspaceID))
 				})
 
-				box.Append(button)
+				if id == activeWsID {
+					entry.button.AddCSSClass("active")
+				} else {
+					entry.button.RemoveCSSClass("active")
+				}
+
+				box.Append(entry.button)
 			}
 		})
 	}
 
 	refresh()
 
+	hyprCh, _ := subscribeHyprEvents()
 	go func() {
-		for event := range subscribeHyprEvents() {
+		for event := range hyprCh {
 			switch event.Name {
 			case "workspace", "workspacev2", "focusedmon", "focusedmonv2", "createworkspace", "createworkspacev2", "destroyworkspace", "destroyworkspacev2", "movewindow", "movewindowv2", "openwindow", "closewindow", "changefloatingmode", "activewindow", "activewindowv2", "urgent":
 				refresh()

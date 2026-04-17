@@ -29,7 +29,7 @@ var (
 	mprisSubscribers []chan struct{}
 )
 
-func subscribeHyprEvents() <-chan hyprEvent {
+func subscribeHyprEvents() (<-chan hyprEvent, func()) {
 	ch := make(chan hyprEvent, 16)
 
 	hyprMu.Lock()
@@ -40,7 +40,18 @@ func subscribeHyprEvents() <-chan hyprEvent {
 		go runHyprEventLoop()
 	})
 
-	return ch
+	unsubscribe := func() {
+		hyprMu.Lock()
+		for i, s := range hyprSubscribers {
+			if s == ch {
+				hyprSubscribers = append(hyprSubscribers[:i], hyprSubscribers[i+1:]...)
+				break
+			}
+		}
+		hyprMu.Unlock()
+	}
+
+	return ch, unsubscribe
 }
 
 func runHyprEventLoop() {
@@ -103,7 +114,7 @@ func hyprSocketPath() string {
 	return filepath.Join(runtimeDir, "hypr", signature, ".socket2.sock")
 }
 
-func subscribeMPRISEvents() <-chan struct{} {
+func subscribeMPRISEvents() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 16)
 
 	mprisMu.Lock()
@@ -114,7 +125,18 @@ func subscribeMPRISEvents() <-chan struct{} {
 		go runMPRISEventLoop()
 	})
 
-	return ch
+	unsubscribe := func() {
+		mprisMu.Lock()
+		for i, s := range mprisSubscribers {
+			if s == ch {
+				mprisSubscribers = append(mprisSubscribers[:i], mprisSubscribers[i+1:]...)
+				break
+			}
+		}
+		mprisMu.Unlock()
+	}
+
+	return ch, unsubscribe
 }
 
 func runMPRISEventLoop() {
@@ -128,6 +150,7 @@ func runMPRISEventLoop() {
 		if err := conn.AddMatchSignal(
 			dbus.WithMatchInterface("org.freedesktop.DBus.Properties"),
 			dbus.WithMatchMember("PropertiesChanged"),
+			dbus.WithMatchObjectPath("/org/mpris/MediaPlayer2"),
 		); err != nil {
 			log.Printf("mpris signal match failed: %v", err)
 		}

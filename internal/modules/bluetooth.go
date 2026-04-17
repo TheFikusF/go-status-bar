@@ -31,6 +31,12 @@ type bluetoothSnapshot struct {
 	Devices       []bluetoothDevice
 }
 
+type bluetoothPopupRowState struct {
+	button *gtk.Button
+	label  *gtk.Label
+	device bluetoothDevice
+}
+
 type bluetoothScanner struct {
 	mu      sync.Mutex
 	devices map[string]bluetoothDevice
@@ -292,12 +298,18 @@ func NewBluetooth(cfg *config.Config) gtk.Widgetter {
 
 	listBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(listBox)
+	emptyRow := gtk.NewLabel("")
+	emptyRow.AddCSSClass("bluetooth-device-row")
+	emptyRow.SetXAlign(0)
+	emptyRow.SetVisible(false)
+	listBox.Append(emptyRow)
 
 	scanner := newBluetoothScanner()
 	refreshRequests := make(chan struct{}, 1)
 	scanning := false
 	updatingSwitch := false
 	pendingDevice := ""
+	var deviceRows []*bluetoothPopupRowState
 	requestRefresh := func() {
 		select {
 		case refreshRequests <- struct{}{}:
@@ -305,18 +317,21 @@ func NewBluetooth(cfg *config.Config) gtk.Widgetter {
 		}
 	}
 
-	attachHoverPopover(module.Box, popover, nil, func() {
+	popup := attachHoverPopover(module.Box, popover, nil, func() {
 		if readBluetoothPowered() {
 			scanning = true
 			scanner.start(requestRefresh)
 			requestRefresh()
 		}
 	})
-	popover.ConnectClosed(func() {
+	popup.SetAfterClose(func() {
 		if scanning {
 			scanning = false
 			scanner.stop()
 		}
+		pendingDevice = ""
+		statusLabel.SetLabel("")
+		statusLabel.SetVisible(false)
 	})
 	powerSwitch.ConnectStateSet(func(state bool) bool {
 		if updatingSwitch {
@@ -375,74 +390,8 @@ func NewBluetooth(cfg *config.Config) gtk.Widgetter {
 				powerSwitch.SetActive(snapshot.Powered)
 				updatingSwitch = false
 
-				removeChildren(listBox)
-				switch {
-				case !snapshot.Powered:
-					pendingDevice = ""
-					statusLabel.SetLabel("")
-					statusLabel.SetVisible(false)
-					row := gtk.NewLabel("Bluetooth is turned off")
-					row.AddCSSClass("bluetooth-device-row")
-					row.SetXAlign(0)
-					listBox.Append(row)
-				case len(snapshot.Devices) == 0:
-					message := "No Bluetooth devices found"
-					if scanning {
-						message = "Scanning for Bluetooth devices..."
-					}
-					row := gtk.NewLabel(message)
-					row.AddCSSClass("bluetooth-device-row")
-					row.SetXAlign(0)
-					listBox.Append(row)
-				default:
-					for _, device := range snapshot.Devices {
-						device := device
-						row := gtk.NewButtonWithLabel(formatBluetoothDevice(device))
-						row.SetHasFrame(false)
-						row.AddCSSClass("bluetooth-device-row")
-						if pendingDevice != "" && pendingDevice == device.Address {
-							row.SetSensitive(false)
-						}
-						if child := row.Child(); child != nil {
-							if lbl, ok := child.(*gtk.Label); ok {
-								lbl.SetXAlign(0)
-							}
-						}
-						if device.Connected {
-							row.AddCSSClass("active")
-						}
-						row.ConnectClicked(func() {
-							pendingDevice = device.Address
-							statusLabel.SetLabel(bluetoothActionStartText(device))
-							statusLabel.SetVisible(true)
-							requestRefresh()
-							go func(device bluetoothDevice) {
-								err := performBluetoothAction(device)
-								ui(func() {
-									pendingDevice = ""
-									if err != nil {
-										statusLabel.SetLabel(err.Error())
-										statusLabel.SetVisible(true)
-									} else {
-										statusLabel.SetLabel(bluetoothActionDoneText(device))
-										statusLabel.SetVisible(true)
-										time.AfterFunc(2*time.Second, func() {
-											ui(func() {
-												if pendingDevice == "" {
-													statusLabel.SetLabel("")
-													statusLabel.SetVisible(false)
-												}
-											})
-										})
-									}
-								})
-								time.AfterFunc(250*time.Millisecond, requestRefresh)
-								time.AfterFunc(1500*time.Millisecond, requestRefresh)
-								time.AfterFunc(3500*time.Millisecond, requestRefresh)
-							}(device)
-						})
-						listBox.Append(row)
-					}
+				if scanning {
+					renderBluetoothDeviceList(listBox, emptyRow, &deviceRows, snapshot, &pendingDevice, statusLabel, requestRefresh)
 				}
 			})
 		}
@@ -451,6 +400,98 @@ func NewBluetooth(cfg *config.Config) gtk.Widgetter {
 	requestRefresh()
 	startPolling(2*time.Second, requestRefresh)
 	return module.Box
+}
+
+func renderBluetoothDeviceList(parent *gtk.Box, empty *gtk.Label, rows *[]*bluetoothPopupRowState, snapshot bluetoothSnapshot, pendingDevice *string, statusLabel *gtk.Label, requestRefresh func()) {
+	message := ""
+	switch {
+	case !snapshot.Powered:
+		*pendingDevice = ""
+		statusLabel.SetLabel("")
+		statusLabel.SetVisible(false)
+		message = "Bluetooth is turned off"
+	case len(snapshot.Devices) == 0:
+		message = "Scanning for Bluetooth devices..."
+	}
+
+	if message != "" {
+		empty.SetLabel(message)
+		empty.SetVisible(true)
+		for _, row := range *rows {
+			row.button.SetVisible(false)
+		}
+		return
+	}
+
+	empty.SetVisible(false)
+	for len(*rows) < len(snapshot.Devices) {
+		row := newBluetoothPopupRowState(pendingDevice, statusLabel, requestRefresh)
+		row.button.SetVisible(false)
+		parent.Append(row.button)
+		*rows = append(*rows, row)
+	}
+
+	for i, device := range snapshot.Devices {
+		row := (*rows)[i]
+		row.update(device, *pendingDevice)
+		row.button.SetVisible(true)
+	}
+	for i := len(snapshot.Devices); i < len(*rows); i++ {
+		(*rows)[i].button.SetVisible(false)
+	}
+}
+
+func newBluetoothPopupRowState(pendingDevice *string, statusLabel *gtk.Label, requestRefresh func()) *bluetoothPopupRowState {
+	row := &bluetoothPopupRowState{}
+	row.button = gtk.NewButton()
+	row.button.SetHasFrame(false)
+	row.button.AddCSSClass("bluetooth-device-row")
+	row.label = gtk.NewLabel("")
+	row.label.SetXAlign(0)
+	row.button.SetChild(row.label)
+	row.button.ConnectClicked(func() {
+		device := row.device
+		*pendingDevice = device.Address
+		statusLabel.SetLabel(bluetoothActionStartText(device))
+		statusLabel.SetVisible(true)
+		requestRefresh()
+		go func(device bluetoothDevice) {
+			err := performBluetoothAction(device)
+			ui(func() {
+				*pendingDevice = ""
+				if err != nil {
+					statusLabel.SetLabel(err.Error())
+					statusLabel.SetVisible(true)
+				} else {
+					statusLabel.SetLabel(bluetoothActionDoneText(device))
+					statusLabel.SetVisible(true)
+					time.AfterFunc(2*time.Second, func() {
+						ui(func() {
+							if *pendingDevice == "" {
+								statusLabel.SetLabel("")
+								statusLabel.SetVisible(false)
+							}
+						})
+					})
+				}
+			})
+			time.AfterFunc(250*time.Millisecond, requestRefresh)
+			time.AfterFunc(1500*time.Millisecond, requestRefresh)
+			time.AfterFunc(3500*time.Millisecond, requestRefresh)
+		}(device)
+	})
+	return row
+}
+
+func (row *bluetoothPopupRowState) update(device bluetoothDevice, pendingDevice string) {
+	row.device = device
+	row.label.SetLabel(formatBluetoothDevice(device))
+	row.button.SetSensitive(!(pendingDevice != "" && pendingDevice == device.Address))
+	if device.Connected {
+		row.button.AddCSSClass("active")
+	} else {
+		row.button.RemoveCSSClass("active")
+	}
 }
 
 func readBluetoothSnapshot(discovered []bluetoothDevice) bluetoothSnapshot {

@@ -112,19 +112,13 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 		log.Printf("tray: ayatana item match failed: %v", err)
 	}
 	if err := conn.AddMatchSignal(
-		dbus.WithMatchInterface("org.freedesktop.DBus.Properties"),
-		dbus.WithMatchMember("PropertiesChanged"),
-	); err != nil {
-		log.Printf("tray: properties match failed: %v", err)
-	}
-	if err := conn.AddMatchSignal(
 		dbus.WithMatchInterface("org.freedesktop.DBus"),
 		dbus.WithMatchMember("NameOwnerChanged"),
 	); err != nil {
 		log.Printf("tray: owner match failed: %v", err)
 	}
 
-	signals := make(chan *dbus.Signal, 64)
+	signals := make(chan *dbus.Signal, 256)
 	conn.Signal(signals)
 	defer conn.RemoveSignal(signals)
 	debounceTimer := time.NewTimer(time.Hour)
@@ -171,6 +165,14 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 
 	refresh()
 
+	// refreshPending tracks whether we need to refresh again after the
+	// current refresh finishes. This lets us drain signals continuously
+	// while a (potentially slow) refresh is running, without spawning
+	// unbounded goroutines.
+	refreshPending := false
+	refreshRunning := false
+	refreshDone := make(chan struct{}, 1)
+
 	for {
 		select {
 		case signal := <-signals:
@@ -181,9 +183,23 @@ func runTraySession(conn *dbus.Conn, container *gtk.Box) {
 				continue
 			}
 			retryCount = 0
-			scheduleRefresh(120 * time.Millisecond)
+			if refreshRunning {
+				refreshPending = true
+			} else {
+				scheduleRefresh(120 * time.Millisecond)
+			}
 		case <-debounceTimer.C:
-			refresh()
+			refreshRunning = true
+			go func() {
+				refresh()
+				refreshDone <- struct{}{}
+			}()
+		case <-refreshDone:
+			refreshRunning = false
+			if refreshPending {
+				refreshPending = false
+				scheduleRefresh(120 * time.Millisecond)
+			}
 		}
 	}
 }
@@ -462,7 +478,6 @@ func newTrayItemWidget(conn *dbus.Conn, item trayItem) (gtk.Widgetter, *Popup) {
 	menu.SetChild(menuBox)
 
 	openMenu := func() {
-		menu.Popup()
 		removeChildren(menuBox)
 		menuBox.Append(gtk.NewLabel("Loading..."))
 
@@ -480,6 +495,9 @@ func newTrayItemWidget(conn *dbus.Conn, item trayItem) (gtk.Widgetter, *Popup) {
 	}
 
 	p := attachHoverPopover(button, menu, nil, openMenu)
+	p.SetAfterClose(func() {
+		removeChildren(menuBox)
+	})
 
 	return button, p
 }

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -85,9 +86,12 @@ func isAppIndicatorName(name string) bool {
 
 // hasStatusNotifierItemInterface checks if the object implements the StatusNotifierItem interface.
 func hasStatusNotifierItemInterface(obj dbus.BusObject) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
 	// Try to introspect the object first.
 	var xmlStr string
-	if err := obj.Call("org.freedesktop.DBus.Introspectable.Introspect", 0).Store(&xmlStr); err == nil {
+	if err := obj.CallWithContext(ctx, "org.freedesktop.DBus.Introspectable.Introspect", 0).Store(&xmlStr); err == nil {
 		if strings.Contains(xmlStr, "org.kde.StatusNotifierItem") || strings.Contains(xmlStr, "org.ayatana.NotificationItem") {
 			return true
 		}
@@ -96,7 +100,7 @@ func hasStatusNotifierItemInterface(obj dbus.BusObject) bool {
 	// Electron apps (e.g. vesktop) return empty introspection XML but still
 	// implement the interface.  Fall back to a Properties.GetAll probe.
 	for _, iface := range []string{"org.kde.StatusNotifierItem", "org.ayatana.NotificationItem"} {
-		call := obj.Call("org.freedesktop.DBus.Properties.GetAll", 0, iface)
+		call := obj.CallWithContext(ctx, "org.freedesktop.DBus.Properties.GetAll", 0, iface)
 		if call.Err == nil {
 			props := map[string]dbus.Variant{}
 			if call.Store(&props) == nil && len(props) > 0 {

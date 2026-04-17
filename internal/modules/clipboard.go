@@ -298,7 +298,12 @@ func NewClipboard() gtk.Widgetter {
 		rebuildList()
 	})
 
-	attachHoverPopover(button, popover, nil, rebuildList)
+	popup := attachHoverPopover(button, popover, nil, rebuildList)
+	popup.SetAfterClose(func() {
+		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
+			listBox.Remove(child)
+		}
+	})
 
 	startClipboardWatchers(history)
 

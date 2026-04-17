@@ -39,6 +39,12 @@ type networkSnapshot struct {
 	Details           []networkInfoGroup
 }
 
+type wifiNetworkRowState struct {
+	button  *gtk.Button
+	label   *gtk.Label
+	network wifiNetwork
+}
+
 func NewNetwork(cfg *config.Config) gtk.Widgetter {
 	module := newTextModule("network")
 	removeChildren(module.Box)
@@ -77,6 +83,11 @@ func NewNetwork(cfg *config.Config) gtk.Widgetter {
 
 	listBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(listBox)
+	emptyRow := gtk.NewLabel("")
+	emptyRow.AddCSSClass("wifi-network-row")
+	emptyRow.SetXAlign(0)
+	emptyRow.SetVisible(false)
+	listBox.Append(emptyRow)
 
 	infoBox := gtk.NewBox(gtk.OrientationVertical, 6)
 	infoBox.AddCSSClass("wifi-info-section")
@@ -85,6 +96,8 @@ func NewNetwork(cfg *config.Config) gtk.Widgetter {
 	expandedGroups := make(map[string]bool)
 	latestSnapshot := networkSnapshot{}
 	refreshRequests := make(chan struct{}, 1)
+	var popupVisible bool
+	var networkRows []*wifiNetworkRowState
 
 	requestRefresh := func() {
 		select {
@@ -99,16 +112,28 @@ func NewNetwork(cfg *config.Config) gtk.Widgetter {
 	}
 	parts := strings.Fields(onClickCmd)
 
-	attachHoverPopover(module.Box, popover, func() {
+	popup := attachHoverPopover(module.Box, popover, func() {
 		if len(parts) > 0 {
 			runDetached(parts[0], parts[1:]...)
 		}
 	}, func() {
+		popupVisible = true
 		for key := range expandedGroups {
 			delete(expandedGroups, key)
 		}
-		renderNetworkInfo(infoBox, latestSnapshot, expandedGroups)
+		if infoBox.Parent() != nil {
+			renderNetworkInfo(infoBox, latestSnapshot, expandedGroups)
+		}
 		requestRefresh()
+	})
+	popup.SetAfterClose(func() {
+		popupVisible = false
+		for key := range expandedGroups {
+			delete(expandedGroups, key)
+		}
+		if infoBox.Parent() != nil {
+			removeChildren(infoBox)
+		}
 	})
 
 	updatingSwitch := false
@@ -180,41 +205,13 @@ func NewNetwork(cfg *config.Config) gtk.Widgetter {
 				networkingSwitch.SetActive(snapshot.NetworkingEnabled)
 				updatingSwitch = false
 
-				removeChildren(listBox)
-				switch {
-				case !snapshot.NetworkingEnabled:
-					row := gtk.NewLabel("Networking is turned off")
-					row.AddCSSClass("wifi-network-row")
-					row.SetXAlign(0)
-					listBox.Append(row)
-				case len(snapshot.Networks) == 0:
-					row := gtk.NewLabel("No Wi-Fi networks found")
-					row.AddCSSClass("wifi-network-row")
-					row.SetXAlign(0)
-					listBox.Append(row)
-				default:
-					for _, network := range snapshot.Networks {
-						network := network
-						row := gtk.NewButtonWithLabel(formatWifiNetwork(network))
-						row.SetHasFrame(false)
-						row.AddCSSClass("wifi-network-row")
-						if child := row.Child(); child != nil {
-							if label, ok := child.(*gtk.Label); ok {
-								label.SetXAlign(0)
-							}
-						}
-						if network.Active {
-							row.AddCSSClass("active")
-						}
-						row.ConnectClicked(func() {
-							popover.Popdown()
-							runDetached("nmcli", "device", "wifi", "connect", network.SSID)
-						})
-						listBox.Append(row)
+				if popupVisible {
+					renderWifiNetworkList(listBox, emptyRow, &networkRows, popover, snapshot)
+
+					if infoBox.Parent() != nil {
+						renderNetworkInfo(infoBox, snapshot, expandedGroups)
 					}
 				}
-
-				renderNetworkInfo(infoBox, snapshot, expandedGroups)
 			})
 		}
 	}()
@@ -544,6 +541,67 @@ func renderNetworkInfo(parent *gtk.Box, snapshot networkSnapshot, expandedGroups
 
 	for _, detail := range snapshot.Details {
 		parent.Append(newNetworkInfoGroup(detail, expandedGroups))
+	}
+}
+
+func renderWifiNetworkList(parent *gtk.Box, empty *gtk.Label, rows *[]*wifiNetworkRowState, popover *gtk.Popover, snapshot networkSnapshot) {
+	message := ""
+	switch {
+	case !snapshot.NetworkingEnabled:
+		message = "Networking is turned off"
+	case len(snapshot.Networks) == 0:
+		message = "No Wi-Fi networks found"
+	}
+
+	if message != "" {
+		empty.SetLabel(message)
+		empty.SetVisible(true)
+		for _, row := range *rows {
+			row.button.SetVisible(false)
+		}
+		return
+	}
+
+	empty.SetVisible(false)
+	for len(*rows) < len(snapshot.Networks) {
+		row := newWifiNetworkRowState(popover)
+		row.button.SetVisible(false)
+		parent.Append(row.button)
+		*rows = append(*rows, row)
+	}
+
+	for i, network := range snapshot.Networks {
+		row := (*rows)[i]
+		row.update(network)
+		row.button.SetVisible(true)
+	}
+	for i := len(snapshot.Networks); i < len(*rows); i++ {
+		(*rows)[i].button.SetVisible(false)
+	}
+}
+
+func newWifiNetworkRowState(popover *gtk.Popover) *wifiNetworkRowState {
+	row := &wifiNetworkRowState{}
+	row.button = gtk.NewButton()
+	row.button.SetHasFrame(false)
+	row.button.AddCSSClass("wifi-network-row")
+	row.label = gtk.NewLabel("")
+	row.label.SetXAlign(0)
+	row.button.SetChild(row.label)
+	row.button.ConnectClicked(func() {
+		popover.Popdown()
+		runDetached("nmcli", "device", "wifi", "connect", row.network.SSID)
+	})
+	return row
+}
+
+func (row *wifiNetworkRowState) update(network wifiNetwork) {
+	row.network = network
+	row.label.SetLabel(formatWifiNetwork(network))
+	if network.Active {
+		row.button.AddCSSClass("active")
+	} else {
+		row.button.RemoveCSSClass("active")
 	}
 }
 

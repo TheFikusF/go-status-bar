@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"statusbar/internal/config"
@@ -123,6 +124,10 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 
 	listBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	menu.Append(listBox)
+	emptyLabel := gtk.NewLabel("No wallpapers found")
+	emptyLabel.AddCSSClass("wallpaper-choice")
+	emptyLabel.SetVisible(false)
+	listBox.Append(emptyLabel)
 
 	// Auto-switch timer logic
 	var scheduleNext func()
@@ -182,10 +187,15 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 
 	updateControls()
 
-	// Thumbnail cache: load each wallpaper thumbnail once, reuse across opens.
+	type wallpaperRowState struct {
+		button *gtk.Button
+		pic    *gtk.Picture
+		label  *gtk.Label
+		name   string
+	}
+
 	var thumbCacheMu sync.Mutex
 	thumbCache := map[string]*gdkpixbuf.Pixbuf{}
-
 	loadThumbnail := func(path string) *gdkpixbuf.Pixbuf {
 		thumbCacheMu.Lock()
 		if pb, ok := thumbCache[path]; ok {
@@ -205,101 +215,133 @@ func NewWallpaper(cfg *config.Config) gtk.Widgetter {
 		return pb
 	}
 
-	// Track images created in the popover so we can clear their paintables
-	// before removing widgets, releasing GPU/pixbuf memory immediately.
-	var liveImages []*gtk.Picture
+	var rows []*wallpaperRowState
+	var loadGeneration atomic.Int64
+
+	newWallpaperRow := func() *wallpaperRowState {
+		row := &wallpaperRowState{}
+		row.button = gtk.NewButton()
+		row.button.SetHasFrame(false)
+		row.button.AddCSSClass("wallpaper-choice-row")
+
+		inner := gtk.NewBox(gtk.OrientationHorizontal, 8)
+
+		row.pic = gtk.NewPicture()
+		row.pic.SetContentFit(gtk.ContentFitContain)
+		row.pic.SetCanShrink(true)
+		row.pic.SetSizeRequest(48, 48)
+		inner.Append(row.pic)
+
+		row.label = gtk.NewLabel("")
+		row.label.SetHAlign(gtk.AlignStart)
+		row.label.AddCSSClass("wallpaper-choice-label")
+		inner.Append(row.label)
+
+		row.button.SetChild(inner)
+		row.button.ConnectClicked(func() {
+			name := row.name
+			go func() {
+				path := filepath.Join(wpDir, name)
+				err := setWallpaper(path)
+				ui(func() {
+					if err != nil {
+						button.SetTooltipText("Failed: " + err.Error())
+					} else {
+						currentWallpaper = name
+						button.SetTooltipText("Wallpaper: " + name)
+					}
+					popover.Popdown()
+				})
+			}()
+		})
+
+		listBox.Append(row.button)
+		return row
+	}
 
 	// Function to update popover content
 	updatePopover := func() {
-		// Clear paintables on old images to release texture memory.
-		for _, img := range liveImages {
-			img.SetPaintable(nil)
-		}
-		liveImages = liveImages[:0]
+		gen := loadGeneration.Add(1)
 
-		// Clear previous children
-		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
-			listBox.Remove(child)
-		}
 		dir := wpDir
 		files, err := os.ReadDir(dir)
 		if err != nil {
-			label := gtk.NewLabel("No wallpapers found")
-			label.AddCSSClass("wallpaper-choice")
-			listBox.Append(label)
+			emptyLabel.SetLabel("No wallpapers found")
+			emptyLabel.SetVisible(true)
+			for _, row := range rows {
+				row.button.SetVisible(false)
+				row.pic.SetPaintable(nil)
+			}
 			return
 		}
 
-		// Build rows immediately with just labels (no images yet)
-		type wpRow struct {
-			pic  *gtk.Picture
-			name string
-		}
-		var rows []wpRow
+		names := make([]string, 0, len(files))
 		for _, file := range files {
 			if file.IsDir() {
 				continue
 			}
-			name := file.Name()
+			names = append(names, file.Name())
+		}
 
-			row := gtk.NewButton()
-			row.SetHasFrame(false)
-			row.AddCSSClass("wallpaper-choice-row")
+		emptyLabel.SetVisible(len(names) == 0)
+		for len(rows) < len(names) {
+			rows = append(rows, newWallpaperRow())
+		}
+
+		for i, name := range names {
+			row := rows[i]
+			row.name = name
+			row.label.SetLabel(name)
+			row.label.SetTooltipText(name)
+			row.button.SetVisible(true)
 			if name == currentWallpaper {
-				row.AddCSSClass("active")
+				row.button.AddCSSClass("active")
+			} else {
+				row.button.RemoveCSSClass("active")
 			}
 
-			inner := gtk.NewBox(gtk.OrientationHorizontal, 8)
-
-			pic := gtk.NewPicture()
-			pic.SetContentFit(gtk.ContentFitContain)
-			pic.SetCanShrink(true)
-			pic.SetSizeRequest(48, 48)
-			inner.Append(pic)
-
-			label := gtk.NewLabel(name)
-			label.SetHAlign(gtk.AlignStart)
-			label.SetTooltipText(name)
-			label.AddCSSClass("wallpaper-choice-label")
-			inner.Append(label)
-
-			row.SetChild(inner)
-			row.ConnectClicked(func() {
-				go func(name string) {
-					path := filepath.Join(wpDir, name)
-					err := setWallpaper(path)
-					ui(func() {
-						if err != nil {
-							button.SetTooltipText("Failed: " + err.Error())
-						} else {
-							currentWallpaper = name
-							button.SetTooltipText("Wallpaper: " + name)
-						}
-						popover.Popdown()
-					})
-				}(name)
-			})
-			listBox.Append(row)
-			liveImages = append(liveImages, pic)
-			rows = append(rows, wpRow{pic: pic, name: name})
+			imgPath := filepath.Join(dir, name)
+			if pb := loadThumbnail(imgPath); pb != nil {
+				row.pic.SetPixbuf(pb)
+			} else {
+				row.pic.SetPaintable(nil)
+			}
+		}
+		for i := len(names); i < len(rows); i++ {
+			rows[i].button.SetVisible(false)
+			rows[i].pic.SetPaintable(nil)
 		}
 
 		// Load thumbnails in background and assign to pictures
 		go func() {
 			for _, r := range rows {
-				imgPath := filepath.Join(dir, r.name)
-				pic := r.pic
-				pb := loadThumbnail(imgPath)
+				if !r.button.Visible() {
+					continue
+				}
+				if loadGeneration.Load() != gen {
+					return
+				}
+				pb := loadThumbnail(filepath.Join(dir, r.name))
 				if pb != nil {
 					ui(func() {
-						pic.SetPixbuf(pb)
+						if loadGeneration.Load() != gen {
+							return
+						}
+						r.pic.SetPixbuf(pb)
 					})
 				}
 			}
 		}()
 	}
 
-	attachHoverPopover(button, popover, nil, updatePopover)
+	popup := attachHoverPopover(button, popover, nil, updatePopover)
+	popup.SetAfterClose(func() {
+		loadGeneration.Add(1)
+		emptyLabel.SetVisible(false)
+		for _, row := range rows {
+			row.pic.SetPaintable(nil)
+		}
+	})
 
 	// Keep shuffle on click
 	button.ConnectClicked(func() {

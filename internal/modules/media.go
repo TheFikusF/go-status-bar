@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
@@ -438,8 +439,15 @@ func NewMusic() gtk.Widgetter {
 		cavaWrap.SetVisible(available)
 	})
 
+	var cavaPending int32
 	startPolling(16*time.Millisecond, func() {
+		// Skip if a previous frame is still queued to avoid piling up
+		// glib.IdleAdd GSource objects on the C side.
+		if !atomic.CompareAndSwapInt32(&cavaPending, 0, 1) {
+			return
+		}
 		ui(func() {
+			atomic.StoreInt32(&cavaPending, 0)
 			if len(cavaLevels) == 0 || len(cavaLevels) != len(cavaTargets) {
 				lastCavaAnimation = time.Time{}
 				return
@@ -538,8 +546,9 @@ func NewMusic() gtk.Widgetter {
 
 	requestRefresh()
 	startPolling(time.Second, requestRefresh)
+	mprisCh, _ := subscribeMPRISEvents()
 	go func() {
-		for range subscribeMPRISEvents() {
+		for range mprisCh {
 			requestRefresh()
 		}
 	}()
@@ -569,8 +578,9 @@ func NewMedia() gtk.Widgetter {
 	}()
 
 	requestRefresh()
+	mprisCh, _ := subscribeMPRISEvents()
 	go func() {
-		for range subscribeMPRISEvents() {
+		for range mprisCh {
 			requestRefresh()
 		}
 	}()
@@ -587,11 +597,10 @@ func NewMPD() gtk.Widgetter {
 }
 
 func readMPRIS() mprisInfo {
-	conn, err := dbus.ConnectSessionBus()
+	conn, err := sharedSessionBus()
 	if err != nil {
 		return mprisInfo{}
 	}
-	defer conn.Close()
 
 	var names []string
 	if err := conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&names); err != nil {
@@ -665,11 +674,10 @@ func readMPRIS() mprisInfo {
 }
 
 func controlActivePlayer(action string) {
-	conn, err := dbus.ConnectSessionBus()
+	conn, err := sharedSessionBus()
 	if err != nil {
 		return
 	}
-	defer conn.Close()
 
 	var names []string
 	if err := conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&names); err != nil {
@@ -692,11 +700,10 @@ func controlPlayer(bus string, action string) {
 		return
 	}
 
-	conn, err := dbus.ConnectSessionBus()
+	conn, err := sharedSessionBus()
 	if err != nil {
 		return
 	}
-	defer conn.Close()
 
 	obj := conn.Object(bus, "/org/mpris/MediaPlayer2")
 	_ = obj.Call("org.mpris.MediaPlayer2.Player."+action, 0).Err
@@ -708,12 +715,11 @@ func seekPlayer(bus string, trackID dbus.ObjectPath, targetPosition int64) {
 		return
 	}
 
-	conn, err := dbus.ConnectSessionBus()
+	conn, err := sharedSessionBus()
 	if err != nil {
 		log.Printf("music seek connect failed: bus=%s target=%d track=%q err=%v", bus, targetPosition, string(trackID), err)
 		return
 	}
-	defer conn.Close()
 
 	obj := conn.Object(bus, "/org/mpris/MediaPlayer2")
 	if trackID != "" && trackID.IsValid() {
@@ -742,11 +748,10 @@ func setPlayerVolume(bus string, volume float64) {
 		return
 	}
 
-	conn, err := dbus.ConnectSessionBus()
+	conn, err := sharedSessionBus()
 	if err != nil {
 		return
 	}
-	defer conn.Close()
 
 	obj := conn.Object(bus, "/org/mpris/MediaPlayer2")
 	_ = obj.Call(

@@ -63,7 +63,7 @@ func NewFocusedApp(cfg *config.Config, win *gtk.ApplicationWindow, monitorName s
 	popover.SetChild(popoverBox)
 
 	popupOpen := false
-	popover.ConnectClosed(func() { popupOpen = false })
+	popupKey := ""
 
 	type monitorColumn struct {
 		name          string
@@ -160,6 +160,35 @@ func NewFocusedApp(cfg *config.Config, win *gtk.ApplicationWindow, monitorName s
 			empty.SetXAlign(0)
 			popoverBox.Append(empty)
 		}
+	}
+
+	popupContentKey := func(columns []monitorColumn) string {
+		var b strings.Builder
+		for _, col := range columns {
+			b.WriteString(col.name)
+			b.WriteByte('|')
+			if col.isThisMonitor {
+				b.WriteByte('1')
+			} else {
+				b.WriteByte('0')
+			}
+			b.WriteByte('|')
+			b.WriteString(strconv.Itoa(col.activeWsID))
+			b.WriteByte('|')
+			for _, wsID := range col.wsIDs {
+				b.WriteString(strconv.Itoa(wsID))
+				b.WriteByte(':')
+				for _, client := range col.wsClients[wsID] {
+					b.WriteString(client.Class)
+					b.WriteByte('/')
+					b.WriteString(client.Title)
+					b.WriteByte(';')
+				}
+				b.WriteByte('|')
+			}
+			b.WriteByte('\n')
+		}
+		return b.String()
 	}
 
 	// refresh fetches all data in a background goroutine and updates
@@ -286,7 +315,11 @@ func NewFocusedApp(cfg *config.Config, win *gtk.ApplicationWindow, monitorName s
 				}
 
 				if popupOpen {
-					buildPopup(columns)
+					nextKey := popupContentKey(columns)
+					if nextKey != popupKey {
+						buildPopup(columns)
+						popupKey = nextKey
+					}
 				}
 			})
 		}()
@@ -296,12 +329,16 @@ func NewFocusedApp(cfg *config.Config, win *gtk.ApplicationWindow, monitorName s
 		popupOpen = true
 		refresh()
 	})
+	popup.SetAfterClose(func() {
+		popupOpen = false
+	})
 
 	refresh()
 	watchSuperKey(popup.SetHeld)
 
+	hyprCh, _ := subscribeHyprEvents()
 	go func() {
-		for event := range subscribeHyprEvents() {
+		for event := range hyprCh {
 			switch event.Name {
 			case "activewindow", "activewindowv2", "openwindow", "closewindow", "closewindowv2",
 				"workspace", "workspacev2", "focusedmon", "focusedmonv2":

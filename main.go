@@ -2,8 +2,13 @@ package main
 
 import (
 	"flag"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"sync"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
@@ -15,6 +20,19 @@ import (
 const appID = "dev.fikus.statusbar"
 
 func main() {
+	go func() {
+		log.Println("pprof listening on :6060")
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			log.Printf("[mem] Alloc=%dMB TotalAlloc=%dMB Sys=%dMB NumGC=%d Goroutines=%d",
+				m.Alloc/1024/1024, m.TotalAlloc/1024/1024, m.Sys/1024/1024, m.NumGC, runtime.NumGoroutine())
+		}
+	}()
 	cssPath := flag.String("css", "", "path to a CSS file to load instead of the default")
 	flag.Parse()
 	// Rebuild os.Args with only the program name and non-flag remainder so GTK
