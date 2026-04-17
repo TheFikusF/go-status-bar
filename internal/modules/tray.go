@@ -43,6 +43,34 @@ type dbusMenuNode struct {
 	Children        []dbusMenuNode
 }
 
+type trayMenuRowKind int
+
+const (
+	trayMenuRowAction trayMenuRowKind = iota
+	trayMenuRowSeparator
+)
+
+type trayMenuRow struct {
+	kind     trayMenuRowKind
+	label    string
+	enabled  bool
+	submenu  bool
+	actionID int32
+}
+
+type trayMenuRowState struct {
+	root       *gtk.Box
+	button     *gtk.Button
+	label      *gtk.Label
+	separator  *gtk.Separator
+	popover    *gtk.Popover
+	conn       *dbus.Conn
+	bus        string
+	menuPath   dbus.ObjectPath
+	actionID   int32
+	actionable bool
+}
+
 type trayReadState int
 
 const (
@@ -472,34 +500,143 @@ func newTrayItemWidget(conn *dbus.Conn, item trayItem) (gtk.Widgetter, *Popup) {
 	menu.SetHasArrow(false)
 	menu.SetAutohide(true)
 	menu.SetParent(button)
-
 	menuBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	menuBox.SetName("tray-item-menu")
 	menu.SetChild(menuBox)
+	emptyLabel := gtk.NewLabel("No menu items exposed")
+	emptyLabel.SetVisible(false)
+	menuBox.Append(emptyLabel)
+	rowPool := make([]*trayMenuRowState, 0, 16)
 
 	openMenu := func() {
-		removeChildren(menuBox)
-		menuBox.Append(gtk.NewLabel("Loading..."))
+		nodes, ok := fetchDBusMenuNodes(conn, item)
+		rows := flattenTrayMenuRows(nodes)
+		if !ok || len(rows) == 0 {
+			emptyLabel.SetVisible(true)
+			for _, row := range rowPool {
+				row.root.SetVisible(false)
+			}
+			return
+		}
 
-		go func() {
-			nodes, ok := fetchDBusMenuNodes(conn, item)
-			ui(func() {
-				removeChildren(menuBox)
-				if !ok || len(nodes) == 0 {
-					menuBox.Append(gtk.NewLabel("No menu items exposed"))
-					return
-				}
-				appendDBusMenuNodes(menuBox, menu, conn, item, nodes, 0)
-			})
-		}()
+		emptyLabel.SetVisible(false)
+		for len(rowPool) < len(rows) {
+			row := newTrayMenuRowState(menu, conn, item)
+			row.root.SetVisible(false)
+			menuBox.Append(row.root)
+			rowPool = append(rowPool, row)
+		}
+		for i, data := range rows {
+			rowPool[i].update(data)
+			rowPool[i].root.SetVisible(true)
+		}
+		for i := len(rows); i < len(rowPool); i++ {
+			rowPool[i].root.SetVisible(false)
+		}
 	}
 
 	p := attachHoverPopover(button, menu, nil, openMenu)
 	p.SetAfterClose(func() {
-		removeChildren(menuBox)
+		emptyLabel.SetVisible(false)
+		for _, row := range rowPool {
+			row.root.SetVisible(false)
+		}
 	})
 
 	return button, p
+}
+
+func flattenTrayMenuRows(nodes []dbusMenuNode) []trayMenuRow {
+	rows := make([]trayMenuRow, 0, len(nodes))
+	appendTrayMenuRows(&rows, nodes, 0)
+	return rows
+}
+
+func appendTrayMenuRows(rows *[]trayMenuRow, nodes []dbusMenuNode, depth int) {
+	for _, node := range nodes {
+		if !node.Visible {
+			continue
+		}
+
+		if strings.EqualFold(node.Type, "separator") {
+			*rows = append(*rows, trayMenuRow{kind: trayMenuRowSeparator})
+			continue
+		}
+
+		label := node.Label
+		if label == "" {
+			label = "(item)"
+		}
+		if depth > 0 {
+			label = strings.Repeat("  ", depth) + label
+		}
+
+		submenu := len(node.Children) > 0 || strings.EqualFold(node.ChildrenDisplay, "submenu")
+		*rows = append(*rows, trayMenuRow{
+			kind:     trayMenuRowAction,
+			label:    label,
+			enabled:  node.Enabled,
+			submenu:  submenu,
+			actionID: node.ID,
+		})
+
+		if submenu {
+			appendTrayMenuRows(rows, node.Children, depth+1)
+		}
+	}
+}
+
+func newTrayMenuRowState(popover *gtk.Popover, conn *dbus.Conn, item trayItem) *trayMenuRowState {
+	row := &trayMenuRowState{
+		popover:  popover,
+		conn:     conn,
+		bus:      item.Bus,
+		menuPath: item.MenuPath,
+	}
+
+	row.root = gtk.NewBox(gtk.OrientationVertical, 0)
+	row.button = gtk.NewButton()
+	row.button.SetHasFrame(false)
+	row.button.AddCSSClass("tray-item-action")
+	row.label = gtk.NewLabel("")
+	row.label.SetXAlign(0)
+	row.button.SetChild(row.label)
+	row.separator = gtk.NewSeparator(gtk.OrientationHorizontal)
+	row.root.Append(row.button)
+	row.root.Append(row.separator)
+	row.separator.SetVisible(false)
+
+	row.button.ConnectClicked(func() {
+		if !row.actionable {
+			return
+		}
+		row.popover.Popdown()
+		triggerDBusMenuClick(row.conn, row.bus, row.menuPath, row.actionID)
+	})
+
+	return row
+}
+
+func (row *trayMenuRowState) update(data trayMenuRow) {
+	switch data.kind {
+	case trayMenuRowSeparator:
+		row.button.SetVisible(false)
+		row.separator.SetVisible(true)
+		row.actionID = 0
+		row.actionable = false
+	default:
+		row.separator.SetVisible(false)
+		row.button.SetVisible(true)
+		row.label.SetLabel(data.label)
+		row.actionID = data.actionID
+		row.actionable = !data.submenu && data.actionID != 0
+		if data.submenu {
+			row.button.AddCSSClass("tray-item-submenu")
+		} else {
+			row.button.RemoveCSSClass("tray-item-submenu")
+		}
+		row.button.SetSensitive(data.enabled && row.actionable)
+	}
 }
 
 func fetchDBusMenuNodes(conn *dbus.Conn, item trayItem) ([]dbusMenuNode, bool) {

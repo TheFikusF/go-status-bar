@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -26,9 +28,18 @@ const (
 
 type clipEntry struct {
 	Kind    clipKind
-	Text    string // clipKindText
-	ImgData []byte // clipKindImage
-	ImgMime string // clipKindImage
+	Text    string   // clipKindText
+	ImgPath string   // clipKindImage
+	ImgMime string   // clipKindImage
+	ImgHash [32]byte // clipKindImage
+}
+
+type clipboardRowState struct {
+	button   *gtk.Button
+	label    *gtk.Label
+	picture  *gtk.Picture
+	entry    clipEntry
+	hasEntry bool
 }
 
 type clipboardHistory struct {
@@ -52,14 +63,16 @@ func (h *clipboardHistory) push(e clipEntry) bool {
 			}
 		}
 	case clipKindImage:
-		if len(e.ImgData) == 0 {
+		if e.ImgPath == "" {
+			e.release()
 			return false
 		}
 		// Deduplicate: skip if the most-recent entry is the same image
 		// (guards against dual text+image watcher firing for same event)
 		if len(h.entries) > 0 {
 			last := h.entries[0]
-			if last.Kind == clipKindImage && len(last.ImgData) == len(e.ImgData) {
+			if last.Kind == clipKindImage && last.ImgMime == e.ImgMime && last.ImgHash == e.ImgHash {
+				e.release()
 				return false
 			}
 		}
@@ -67,6 +80,9 @@ func (h *clipboardHistory) push(e clipEntry) bool {
 
 	h.entries = append([]clipEntry{e}, h.entries...)
 	if len(h.entries) > clipboardMaxHistory {
+		for _, stale := range h.entries[clipboardMaxHistory:] {
+			stale.release()
+		}
 		h.entries = h.entries[:clipboardMaxHistory]
 	}
 	return true
@@ -74,6 +90,9 @@ func (h *clipboardHistory) push(e clipEntry) bool {
 
 func (h *clipboardHistory) clear() {
 	h.mu.Lock()
+	for _, entry := range h.entries {
+		entry.release()
+	}
 	h.entries = h.entries[:0]
 	h.mu.Unlock()
 }
@@ -103,7 +122,10 @@ func readCurrentClip() (clipEntry, bool) {
 			if have == want {
 				data, err := exec.CommandContext(ctx, "wl-paste", "--type", have).Output()
 				if err == nil && len(data) > 0 {
-					return clipEntry{Kind: clipKindImage, ImgData: data, ImgMime: have}, true
+					entry, err := newClipboardImageEntry(data, have)
+					if err == nil {
+						return entry, true
+					}
 				}
 			}
 		}
@@ -114,6 +136,31 @@ func readCurrentClip() (clipEntry, bool) {
 		return clipEntry{}, false
 	}
 	return clipEntry{Kind: clipKindText, Text: string(data)}, true
+}
+
+func newClipboardImageEntry(data []byte, mime string) (clipEntry, error) {
+	hash := sha256.Sum256(data)
+	file, err := os.CreateTemp("", "statusbar-clipboard-image-*")
+	if err != nil {
+		return clipEntry{}, err
+	}
+	path := file.Name()
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		_ = os.Remove(path)
+		return clipEntry{}, err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return clipEntry{}, err
+	}
+	return clipEntry{Kind: clipKindImage, ImgPath: path, ImgMime: mime, ImgHash: hash}, nil
+}
+
+func (e clipEntry) release() {
+	if e.Kind == clipKindImage && e.ImgPath != "" {
+		_ = os.Remove(e.ImgPath)
+	}
 }
 
 // subscribeWatcher runs "wl-paste <args>" in a restart loop, calling onNotify
@@ -158,45 +205,13 @@ func startClipboardWatchers(history *clipboardHistory) {
 	go subscribeWatcher([]string{"--type", "image/png", "--watch", "echo"}, onNotify)
 }
 
-// clipImageThumbnail decodes imgData into a scaled thumbnail widget.
-func clipImageThumbnail(data []byte) gtk.Widgetter {
-	loader := gdkpixbuf.NewPixbufLoader()
-	if err := loader.Write(data); err != nil {
-		_ = loader.Close()
-		return gtk.NewLabel("[image]")
+// clipImageThumbnail loads a scaled thumbnail pixbuf from the stored image file.
+func clipImageThumbnail(path string) *gdkpixbuf.Pixbuf {
+	pixbuf, err := gdkpixbuf.NewPixbufFromFileAtScale(path, 200, 140, true)
+	if err != nil {
+		return nil
 	}
-	if err := loader.Close(); err != nil {
-		return gtk.NewLabel("[image]")
-	}
-	pixbuf := loader.Pixbuf()
-	if pixbuf == nil {
-		return gtk.NewLabel("[image]")
-	}
-
-	const maxW, maxH = 200, 140
-	w, h := pixbuf.Width(), pixbuf.Height()
-	tw, th := maxW, maxH
-	if w > 0 && h > 0 {
-		if w*maxH > h*maxW {
-			th = maxW * h / w
-		} else {
-			tw = maxH * w / h
-		}
-	}
-	if tw < 1 {
-		tw = 1
-	}
-	if th < 1 {
-		th = 1
-	}
-	scaled := pixbuf.ScaleSimple(tw, th, gdkpixbuf.InterpBilinear)
-	if scaled == nil {
-		scaled = pixbuf
-	}
-	pic := gtk.NewPictureForPixbuf(scaled)
-	pic.SetContentFit(gtk.ContentFitContain)
-	pic.SetSizeRequest(tw, th)
-	return pic
+	return pixbuf
 }
 
 func NewClipboard() gtk.Widgetter {
@@ -241,55 +256,34 @@ func NewClipboard() gtk.Widgetter {
 	listBox := gtk.NewBox(gtk.OrientationVertical, 2)
 	listBox.SetName("clipboard-list")
 	scroll.SetChild(listBox)
+	empty := gtk.NewLabel("No clipboard history")
+	empty.AddCSSClass("clipboard-empty")
+	empty.SetVisible(false)
+	listBox.Append(empty)
+	rows := make([]*clipboardRowState, 0, clipboardMaxHistory)
 
 	rebuildList := func() {
-		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
-			listBox.Remove(child)
-		}
 		entries := history.snapshot()
 		if len(entries) == 0 {
-			empty := gtk.NewLabel("No clipboard history")
-			empty.AddCSSClass("clipboard-empty")
-			listBox.Append(empty)
+			empty.SetVisible(true)
+			for _, row := range rows {
+				row.reset()
+			}
 			return
 		}
-		for _, entry := range entries {
-			entry := entry
-			row := gtk.NewButton()
-			row.SetHasFrame(false)
-			row.AddCSSClass("clipboard-row")
-
-			switch entry.Kind {
-			case clipKindImage:
-				row.SetChild(clipImageThumbnail(entry.ImgData))
-			case clipKindText:
-				preview := strings.ReplaceAll(entry.Text, "\n", " ")
-				runes := []rune(preview)
-				if len(runes) > 80 {
-					preview = string(runes[:80]) + "…"
-				}
-				lbl := gtk.NewLabel(preview)
-				lbl.SetHAlign(gtk.AlignStart)
-				lbl.SetMaxWidthChars(42)
-				row.SetChild(lbl)
-			}
-
-			row.ConnectClicked(func() {
-				go func() {
-					var cmd *exec.Cmd
-					switch entry.Kind {
-					case clipKindText:
-						cmd = exec.Command("wl-copy")
-						cmd.Stdin = bytes.NewReader([]byte(entry.Text))
-					case clipKindImage:
-						cmd = exec.Command("wl-copy", "--type", entry.ImgMime)
-						cmd.Stdin = bytes.NewReader(entry.ImgData)
-					}
-					_ = cmd.Run()
-					ui(func() { popover.Popdown() })
-				}()
-			})
-			listBox.Append(row)
+		empty.SetVisible(false)
+		for len(rows) < len(entries) {
+			row := newClipboardRowState(popover)
+			row.button.SetVisible(false)
+			listBox.Append(row.button)
+			rows = append(rows, row)
+		}
+		for i, entry := range entries {
+			rows[i].update(entry)
+			rows[i].button.SetVisible(true)
+		}
+		for i := len(entries); i < len(rows); i++ {
+			rows[i].reset()
 		}
 	}
 
@@ -300,12 +294,112 @@ func NewClipboard() gtk.Widgetter {
 
 	popup := attachHoverPopover(button, popover, nil, rebuildList)
 	popup.SetAfterClose(func() {
-		for child := listBox.FirstChild(); child != nil; child = listBox.FirstChild() {
-			listBox.Remove(child)
+		empty.SetVisible(false)
+		for _, row := range rows {
+			row.button.SetVisible(false)
 		}
 	})
 
 	startClipboardWatchers(history)
 
 	return button
+}
+
+func newClipboardRowState(popover *gtk.Popover) *clipboardRowState {
+	row := &clipboardRowState{}
+	row.button = gtk.NewButton()
+	row.button.SetHasFrame(false)
+	row.button.AddCSSClass("clipboard-row")
+
+	row.label = gtk.NewLabel("")
+	row.label.SetHAlign(gtk.AlignStart)
+	row.label.SetMaxWidthChars(42)
+
+	row.picture = gtk.NewPicture()
+	row.picture.SetContentFit(gtk.ContentFitContain)
+	row.picture.SetCanShrink(true)
+	row.picture.SetSizeRequest(200, 140)
+
+	row.button.ConnectClicked(func() {
+		entry := row.entry
+		go func() {
+			var cmd *exec.Cmd
+			var file *os.File
+			switch entry.Kind {
+			case clipKindText:
+				cmd = exec.Command("wl-copy")
+				cmd.Stdin = bytes.NewReader([]byte(entry.Text))
+			case clipKindImage:
+				var err error
+				file, err = os.Open(entry.ImgPath)
+				if err != nil {
+					return
+				}
+				cmd = exec.Command("wl-copy", "--type", entry.ImgMime)
+				cmd.Stdin = file
+			}
+			_ = cmd.Run()
+			if file != nil {
+				_ = file.Close()
+			}
+			ui(func() { popover.Popdown() })
+		}()
+	})
+
+	return row
+}
+
+func (row *clipboardRowState) update(entry clipEntry) {
+	if row.hasEntry && sameClipEntry(row.entry, entry) {
+		switch entry.Kind {
+		case clipKindImage:
+			row.button.SetChild(row.picture)
+		case clipKindText:
+			row.button.SetChild(row.label)
+		}
+		return
+	}
+
+	row.entry = entry
+	row.hasEntry = true
+	switch entry.Kind {
+	case clipKindImage:
+		thumb := clipImageThumbnail(entry.ImgPath)
+		if thumb != nil {
+			row.picture.SetPixbuf(thumb)
+		} else {
+			row.picture.SetPaintable(nil)
+		}
+		row.button.SetChild(row.picture)
+	case clipKindText:
+		preview := strings.ReplaceAll(entry.Text, "\n", " ")
+		runes := []rune(preview)
+		if len(runes) > 80 {
+			preview = string(runes[:80]) + "…"
+		}
+		row.label.SetLabel(preview)
+		row.button.SetChild(row.label)
+		row.picture.SetPaintable(nil)
+	}
+}
+
+func (row *clipboardRowState) reset() {
+	row.picture.SetPaintable(nil)
+	row.entry = clipEntry{}
+	row.hasEntry = false
+	row.button.SetVisible(false)
+}
+
+func sameClipEntry(left, right clipEntry) bool {
+	if left.Kind != right.Kind {
+		return false
+	}
+	switch left.Kind {
+	case clipKindText:
+		return left.Text == right.Text
+	case clipKindImage:
+		return left.ImgMime == right.ImgMime && left.ImgHash == right.ImgHash
+	default:
+		return false
+	}
 }
